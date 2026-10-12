@@ -1,0 +1,5 @@
+{
+  "name": "@axis/database",
+  "private": true,
+  "type": "module"
+}

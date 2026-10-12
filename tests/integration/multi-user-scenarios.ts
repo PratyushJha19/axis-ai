@@ -1,0 +1,348 @@
+import assert from "node:assert/strict";
+import { randomBytes, randomUUID } from "node:crypto";
+import type { TestContext } from "node:test";
+import request from "supertest";
+import { sql, type Kysely } from "kysely";
+import type { Database } from "../../packages/database/src/index.js";
+import {
+  createAuth,
+  type IdentityProvider,
+} from "../../services/api/src/auth.js";
+import { createApp } from "../../services/api/src/app.js";
+import { KeyVault } from "../../packages/domain/src/ai-crypto.js";
+import { createLogger } from "../../packages/observability/src/index.js";
+
+export async function multiUserScenarios(
+  t: TestContext,
+  db: Kysely<Database>,
+  connectionString: string,
+) {
+  const origin = "http://localhost:3000";
+  let changedEmail = false;
+  const provider: IdentityProvider = {
+    async begin() {
+      const state = randomUUID();
+      return {
+        url: `${origin}/synthetic?state=${state}`,
+        challenge: { state, nonce: randomUUID(), verifier: randomUUID() },
+      };
+    },
+    async verify(url) {
+      const code = url.searchParams.get("code")!;
+      return {
+        subject: `multi-${code}`,
+        email:
+          code === "a" && changedEmail
+            ? "renamed@example.invalid"
+            : `${code}@example.invalid`,
+        verified: code !== "unverified",
+        name: code,
+      };
+    },
+  };
+  const auth = createAuth(
+    db,
+    connectionString,
+    {
+      origin,
+      secret: randomBytes(48).toString("hex"),
+      clientId: "synthetic",
+      clientSecret: "synthetic",
+    },
+    provider,
+  );
+  let calls: string[] = [],
+    logs = "";
+  const app = createApp({
+    db,
+    auth,
+    checkReady: async () => undefined,
+    logger: createLogger("info", {
+      write(chunk: string) {
+        logs += chunk;
+      },
+    }),
+    ai: {
+      vault: new KeyVault(new Map([["test", randomBytes(32)]]), "test"),
+      rate: 20,
+      adapter: {
+        async generate(config) {
+          calls.push(config.apiKey);
+          return { content: "Synthetic private response", usage: null };
+        },
+      },
+    },
+  });
+  const a = request.agent(app),
+    b = request.agent(app);
+  const login = async (client: typeof a, code: string) => {
+    const start = await client.get("/auth/google").expect(302);
+    const state = new URL(start.headers.location!).searchParams.get("state");
+    return client.get(`/auth/google/callback?state=${state}&code=${code}`);
+  };
+  let headersA: Record<string, string>,
+    headersB: Record<string, string>,
+    idA: string,
+    idB: string;
+  try {
+    await t.test(
+      "multi-user verified Google enrollment and concurrent same-subject signup",
+      async () => {
+        await Promise.all([login(a, "a"), login(b, "b")]);
+        const ma = await a.get("/api/v1/me").expect(200),
+          mb = await b.get("/api/v1/me").expect(200);
+        idA = ma.body.user.id;
+        idB = mb.body.user.id;
+        assert.notEqual(idA, idB);
+        headersA = { Origin: origin, "X-CSRF-Token": ma.body.csrfToken };
+        headersB = { Origin: origin, "X-CSRF-Token": mb.body.csrfToken };
+        const one = request.agent(app),
+          two = request.agent(app);
+        await Promise.all([login(one, "same"), login(two, "same")]);
+        const first = await one.get("/api/v1/me").expect(200),
+          second = await two.get("/api/v1/me").expect(200);
+        assert.equal(first.body.user.id, second.body.user.id);
+        assert.equal(
+          (
+            await sql<{
+              n: number;
+            }>`select count(*)::int n from users where google_subject='multi-same'`.execute(
+              db,
+            )
+          ).rows[0]!.n,
+          1,
+        );
+        assert.equal(
+          (await login(request.agent(app), "unverified")).headers.location,
+          "/?login=failed",
+        );
+      },
+    );
+    await t.test(
+      "two sessions cannot read, modify, link or delete each other’s core records",
+      async () => {
+        const key = randomUUID();
+        for (const [route, payload] of [
+          ["projects", { name: "Private project A" }],
+          ["tasks", { title: "Private task A" }],
+          [
+            "memories",
+            {
+              content: "Private memory A",
+              kind: "fact",
+              scope: "global",
+              truth_status: "confirmed",
+              sensitivity: "ordinary",
+            },
+          ],
+        ] as const) {
+          const created = await a
+            .post(`/api/v1/${route}`)
+            .set(headersA)
+            .set("Idempotency-Key", route === "projects" ? key : randomUUID())
+            .send(payload)
+            .expect(201);
+          const id = created.body.id;
+          await b.get(`/api/v1/${route}/${id}`).expect(404);
+          await b
+            .patch(`/api/v1/${route}/${id}`)
+            .set(headersB)
+            .set("If-Match", "1")
+            .send(payload)
+            .expect(404);
+          await b
+            .delete(`/api/v1/${route}/${id}`)
+            .set(headersB)
+            .set("If-Match", "1")
+            .expect(404);
+          assert.equal(
+            (await b.get(`/api/v1/${route}`).expect(200)).body.items.length,
+            0,
+          );
+          if (route === "projects")
+            await b
+              .post("/api/v1/tasks")
+              .set(headersB)
+              .set("Idempotency-Key", randomUUID())
+              .send({ title: "Attempt cross link", project_id: id })
+              .expect(404);
+          await a.get(`/api/v1/${route}/${id}`).expect(200);
+        }
+        // Same idempotency UUID is valid independently for another user.
+        await b
+          .post("/api/v1/projects")
+          .set(headersB)
+          .set("Idempotency-Key", key)
+          .send({ name: "Private project B" })
+          .expect(201);
+        assert.equal(
+          (await b.get("/api/v1/summary").expect(200)).body.active_tasks,
+          0,
+        );
+        await b
+          .patch("/api/v1/me")
+          .set(headersA)
+          .send({ display_name: "attack", timezone: "UTC" })
+          .expect(403);
+        await a
+          .patch("/api/v1/me")
+          .set(headersA)
+          .send({ display_name: "Custom A", timezone: "Asia/Kolkata" })
+          .expect(200);
+        await b
+          .patch("/api/v1/me")
+          .set(headersB)
+          .send({ display_name: "Custom B", timezone: "America/New_York" })
+          .expect(200);
+        assert.equal(
+          (await a.get("/api/v1/me")).body.user.timezone,
+          "Asia/Kolkata",
+        );
+      },
+    );
+    await t.test(
+      "two sessions keep reminder settings, attempts and schedules private",
+      async () => {
+        const input = {
+          title: "Private reminder A",
+          body: "Only A",
+          local_due: "2099-01-01T10:00",
+          timezone: "Asia/Kolkata",
+          disambiguation: "reject",
+          recurrence: "none",
+          task_id: null,
+          project_id: null,
+          confirmed: true,
+        };
+        const reminder = await a
+          .post("/api/v1/reminders")
+          .set(headersA)
+          .set("Idempotency-Key", randomUUID())
+          .send(input)
+          .expect(201);
+        await b.get(`/api/v1/reminders/${reminder.body.id}`).expect(404);
+        await b
+          .get(`/api/v1/reminders/${reminder.body.id}/attempts`)
+          .expect(404);
+        await b
+          .post(`/api/v1/reminders/${reminder.body.id}/cancel`)
+          .set(headersB)
+          .set("If-Match", "1")
+          .send({})
+          .expect(404);
+        assert.equal(
+          (await b.get("/api/v1/reminders").expect(200)).body.items.length,
+          0,
+        );
+        const prefs = (await a.get("/api/v1/reminder-preferences").expect(200))
+          .body;
+        await a
+          .put("/api/v1/reminder-preferences")
+          .set(headersA)
+          .set("If-Match", String(prefs.version))
+          .send({ quiet_start: "22:00", quiet_end: "07:00", focus_blocks: [] })
+          .expect(200);
+        assert.equal(
+          (await b.get("/api/v1/reminder-preferences").expect(200)).body
+            .quiet_start,
+          null,
+        );
+      },
+    );
+    await t.test(
+      "two sessions use only their own encrypted BYOK keys and conversations",
+      async () => {
+        const config = { provider: "groq", model: "llama-3.1-8b-instant" };
+        await a
+          .put("/api/v1/ai/config")
+          .set(headersA)
+          .send({ ...config, apiKey: "synthetic-multi-key-A" })
+          .expect(200);
+        assert.equal(
+          (await b.get("/api/v1/ai/config").expect(200)).body.config,
+          null,
+        );
+        await b
+          .put("/api/v1/ai/config")
+          .set(headersB)
+          .send({ ...config, apiKey: "synthetic-multi-key-B" })
+          .expect(200);
+        const configA = (await a.get("/api/v1/ai/config")).body.config;
+        await b
+          .put("/api/v1/ai/config")
+          .set(headersB)
+          .send({ ...config, user_id: idA })
+          .expect(400);
+        calls = [];
+        const key = randomUUID();
+        const chat = await a
+          .post("/api/v1/ai/chat")
+          .set(headersA)
+          .send({
+            request_id: key,
+            message: "Private conversation A",
+            consent: true,
+          })
+          .expect(200);
+        const id = chat.body.conversation_id;
+        await b.get(`/api/v1/ai/conversations/${id}`).expect(404);
+        await b.get(`/api/v1/ai/requests/${key}`).expect(404);
+        await b
+          .post("/api/v1/ai/chat")
+          .set(headersB)
+          .send({
+            request_id: randomUUID(),
+            conversation_id: id,
+            message: "attack",
+            consent: true,
+          })
+          .expect(404);
+        await b
+          .post("/api/v1/ai/chat")
+          .set(headersB)
+          .send({
+            request_id: key,
+            message: "Private conversation B",
+            consent: true,
+          })
+          .expect(200);
+        assert.deepEqual(calls, [
+          "synthetic-multi-key-A",
+          "synthetic-multi-key-B",
+        ]);
+        assert.equal(
+          (await b.get("/api/v1/ai/conversations")).body.items.length,
+          1,
+        );
+        await b.delete("/api/v1/ai/config").set(headersB).expect(204);
+        assert.deepEqual(
+          (await a.get("/api/v1/ai/config")).body.config,
+          configA,
+        );
+        assert.ok(!logs.includes("synthetic-multi-key-A"));
+        assert.ok(!logs.includes("synthetic-multi-key-B"));
+        // Leave no foreign test-vault rows for the later rotation CLI scenario.
+        await a.delete("/api/v1/ai/config").set(headersA).expect(204);
+      },
+    );
+    await t.test(
+      "Google email changes preserve account identity; logout affects only its session",
+      async () => {
+        changedEmail = true;
+        await login(a, "a");
+        const me = await a.get("/api/v1/me").expect(200);
+        assert.equal(me.body.user.id, idA);
+        assert.equal(me.body.user.email, "renamed@example.invalid");
+        assert.equal(me.body.user.display_name, "Custom A");
+        await a
+          .post("/api/v1/logout")
+          .set({ Origin: origin, "X-CSRF-Token": me.body.csrfToken })
+          .expect(204);
+        await a.get("/api/v1/me").expect(401);
+        assert.equal((await b.get("/api/v1/me").expect(200)).body.user.id, idB);
+      },
+    );
+  } finally {
+    await auth.close();
+  }
+}

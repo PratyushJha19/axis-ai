@@ -1,0 +1,72 @@
+{
+  "name": "axis",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "packageManager": "npm@11.16.0",
+  "workspaces": [
+    "services/*",
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "setup:ai": "node scripts/configure-ai.mjs",
+    "ai:rotate-keys": "node --env-file-if-exists=.env --import tsx scripts/rotate-ai-keys.ts",
+    "dev:api": "node --env-file-if-exists=.env --import tsx services/api/src/main.ts",
+    "dev:worker": "node --env-file-if-exists=.env --import tsx services/worker/src/main.ts",
+    "worker:health": "node --env-file-if-exists=.env --import tsx services/worker/src/health.ts",
+    "db:migrate": "node --env-file-if-exists=.env --import tsx database/scripts/migrate.ts",
+    "format": "prettier --write apps services packages database tests scripts package.json tsconfig.json eslint.config.js .github docs/m*-*.md docs/threat-model.md docs/runbook.md playwright.config.ts",
+    "format:check": "prettier --check apps services packages database tests scripts package.json tsconfig.json eslint.config.js .github docs/m*-*.md docs/threat-model.md docs/runbook.md playwright.config.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit && tsc -p apps/web/tsconfig.json",
+    "test": "tsx --test tests/unit/*.test.ts tests/security/*.test.ts",
+    "test:integration": "node --env-file-if-exists=.env --import tsx --test tests/integration/*.test.ts",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "build": "npm run build --workspace @axis/web",
+    "dev": "powershell.exe -NoProfile -File scripts/start-local.ps1",
+    "setup:google": "powershell.exe -NoProfile -File scripts/configure-google.ps1",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "connect-pg-simple": "^10.0.0",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.3.0",
+    "kysely": "^0.28.17",
+    "lucide-react": "^1.55.0",
+    "openid-client": "^6.8.8",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "svix": "^2.8.0",
+    "twilio": "^6.2.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.0",
+    "@types/connect-pg-simple": "^7.0.3",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/supertest": "^7.2.1",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.10",
+    "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^8.3.4"
+  }
+}

@@ -1,0 +1,98 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import test from "node:test";
+import { sql } from "kysely";
+import request from "supertest";
+import {
+  createDatabase,
+  checkDatabase,
+} from "../../packages/database/src/index.js";
+import { createMigrator } from "../../database/scripts/migrator.js";
+import { createApp } from "../../services/api/src/app.js";
+import { createLogger } from "../../packages/observability/src/index.js";
+import { coreScenarios } from "./core-scenarios.js";
+import { reminderScenarios } from "./reminder-scenarios.js";
+import { aiScenarios } from "./ai-scenarios.js";
+import { multiUserScenarios } from "./multi-user-scenarios.js";
+import { notificationScenarios } from "./notification-scenarios.js";
+
+test("empty PostgreSQL migrates, repeats safely, and persists across connection restart", async (t) => {
+  const connectionString = process.env.TEST_DATABASE_URL;
+  assert.ok(
+    connectionString,
+    "TEST_DATABASE_URL is required; this test must not silently skip.",
+  );
+  const url = new URL(connectionString);
+  assert.ok(
+    ["localhost", "127.0.0.1"].includes(url.hostname),
+    "Use an isolated local database.",
+  );
+  assert.match(
+    url.pathname,
+    /^\/axis_test_[a-z0-9_]+$/,
+    "Use a dedicated axis_test_ database.",
+  );
+  const db = createDatabase(connectionString);
+  try {
+    const existing = await sql<{
+      name: string | null;
+    }>`select to_regclass('foundation_metadata')::text as name`.execute(db);
+    assert.equal(
+      existing.rows[0]?.name,
+      null,
+      "Test requires an empty database; create a new one.",
+    );
+    const app = createApp({
+      checkReady: () => checkDatabase(db),
+      logger: createLogger("silent"),
+    });
+    await request(app).get("/health/ready").expect(503);
+    const m1 = await createMigrator(db).migrateTo("002-core");
+    assert.equal(m1.error, undefined);
+    assert.equal(m1.results?.length, 2);
+    const upgradeUser = randomUUID(),
+      upgradeTask = randomUUID();
+    await sql`insert into users(id,google_subject,email,display_name) values (${upgradeUser},'upgrade-fixture','upgrade@example.invalid','Upgrade fixture')`.execute(
+      db,
+    );
+    await sql`insert into tasks(id,user_id,title) values (${upgradeTask},${upgradeUser},'M1 upgrade fixture')`.execute(
+      db,
+    );
+    const m2 = await createMigrator(db).migrateTo("003-reminders");
+    assert.equal(m2.error, undefined);
+    assert.equal(m2.results?.length, 1);
+    const first = await createMigrator(db).migrateToLatest();
+    assert.equal(first.error, undefined);
+    assert.equal(first.results?.length, 2);
+    assert.equal(
+      (
+        await sql<{
+          title: string;
+        }>`select title from tasks where id=${upgradeTask}`.execute(db)
+      ).rows[0]?.title,
+      "M1 upgrade fixture",
+    );
+    const second = await createMigrator(db).migrateToLatest();
+    assert.equal(second.error, undefined);
+    assert.equal(second.results?.length, 0);
+    await request(app).get("/health/ready").expect(200);
+    await assert.rejects(
+      sql`insert into foundation_metadata values (2, 1)`.execute(db),
+    );
+    const timezone = await sql<{ TimeZone: string }>`show timezone`.execute(db);
+    assert.equal(timezone.rows[0]?.TimeZone, "UTC");
+    await coreScenarios(db, connectionString);
+    await multiUserScenarios(t, db, connectionString);
+    await reminderScenarios(t, db, connectionString);
+    await aiScenarios(t, db, connectionString);
+    await notificationScenarios(t, db, connectionString);
+  } finally {
+    await db.destroy();
+  }
+  const reconnected = createDatabase(connectionString);
+  try {
+    await checkDatabase(reconnected);
+  } finally {
+    await reconnected.destroy();
+  }
+});

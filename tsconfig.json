@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": [
+    "services/**/*.ts",
+    "packages/**/*.ts",
+    "database/**/*.ts",
+    "tests/**/*.ts",
+    "scripts/**/*.ts",
+    "playwright.config.ts"
+  ]
+}

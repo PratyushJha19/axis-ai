@@ -1,0 +1,5 @@
+{
+  "name": "@axis/worker",
+  "private": true,
+  "type": "module"
+}
