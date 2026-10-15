@@ -48,7 +48,7 @@ test("two Google sessions have separate private workspaces and independent logou
     ).toHaveCount(0);
     await other
       .getByRole("navigation")
-      .getByRole("button", { name: "AI Settings", exact: true })
+      .getByRole("button", { name: "AI provider", exact: true })
       .click();
     await expect(
       other.getByText("No API key configured", { exact: true }),

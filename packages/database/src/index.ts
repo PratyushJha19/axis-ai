@@ -24,6 +24,14 @@ export async function checkDatabase(db: Kysely<Database>) {
   const result = await sql<{
     schema_version: number;
   }>`select schema_version from foundation_metadata where id = 1`.execute(db);
-  if (result.rows[0]?.schema_version !== 5)
+  if (result.rows[0]?.schema_version !== 8)
     throw new Error("Schema unavailable");
+}
+
+// Compose existing domain writes inside a caller's atomic confirmation transaction.
+export async function inTransaction<T>(
+  db: Kysely<Database>,
+  work: (trx: Kysely<Database>) => Promise<T>,
+): Promise<T> {
+  return db.isTransaction ? work(db) : db.transaction().execute(work);
 }

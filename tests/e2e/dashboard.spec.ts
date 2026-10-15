@@ -10,7 +10,7 @@ test("owner can capture, correct, archive and delete through the real dashboard"
   await expect(
     page.getByRole("heading", { name: "Welcome back, Alex." }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Set up", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByLabel("IANA timezone").fill("Asia/Kolkata");
   await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByRole("status")).toContainText("Profile saved.");
@@ -127,7 +127,7 @@ test("owner can capture, correct, archive and delete through the real dashboard"
   ).not.toBeVisible();
   await page
     .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
+    .getByRole("button", { name: "Today", exact: true })
     .click();
   await page.setViewportSize({ width: 1440, height: 1050 });
   await expect(

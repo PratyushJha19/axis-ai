@@ -31,6 +31,7 @@ import type {
   MessagingConfig,
 } from "../../packages/domain/src/notification-provider.js";
 import { channelAdapters } from "../../packages/domain/src/notification-provider.js";
+import { receiveTelegramUpdate } from "../../packages/domain/src/telegram.js";
 import {
   DeliveryEngine,
   outboxProvider,
@@ -139,7 +140,7 @@ export async function notificationScenarios(
         db,
       );
       const s = await settings();
-      await sql`update notification_preferences set whatsapp_destination=${`+15${Math.floor(
+      await sql`update notification_preferences set fallback_enabled=true,whatsapp_destination=${`+15${Math.floor(
         Math.random() * 1e9,
       )
         .toString()
@@ -723,6 +724,16 @@ export async function notificationScenarios(
           to: "attacker@example.invalid",
         })
         .expect(400);
+      const savedEmailConfig = config.email;
+      config.email = undefined;
+      await a
+        .post("/api/v1/notifications/test")
+        .set(ha)
+        .set("Idempotency-Key", randomUUID())
+        .send({ channel: "email", consent: true })
+        .expect(422);
+      assert.equal((await a.get("/api/v1/notifications")).body.items.length, 0);
+      config.email = savedEmailConfig;
       const queued = await a
         .post("/api/v1/notifications/test")
         .set(ha)
@@ -766,6 +777,20 @@ export async function notificationScenarios(
         To: `whatsapp:${primary.destination}`,
       };
       await request(app).post(path).type("form").send(params).expect(403);
+      const wrongAccount = { ...params, AccountSid: `AC${"2".repeat(32)}` };
+      await request(app)
+        .post(path)
+        .set(
+          "X-Twilio-Signature",
+          twilio.getExpectedTwilioSignature(
+            config.twilio!.token,
+            `${config.publicOrigin}${path}`,
+            wrongAccount,
+          ),
+        )
+        .type("form")
+        .send(wrongAccount)
+        .expect(403);
       const signature = twilio.getExpectedTwilioSignature(
         config.twilio!.token,
         `${config.publicOrigin}${path}`,
@@ -785,6 +810,20 @@ export async function notificationScenarios(
         .send(params)
         .expect(204);
       assert.equal((await job(primary.id)).status, "delivered");
+      const unknownPath = `/webhooks/twilio/status/${randomUUID()}`;
+      await request(app)
+        .post(unknownPath)
+        .set(
+          "X-Twilio-Signature",
+          twilio.getExpectedTwilioSignature(
+            config.twilio!.token,
+            `${config.publicOrigin}${unknownPath}`,
+            params,
+          ),
+        )
+        .type("form")
+        .send(params)
+        .expect(204);
       const emailJob = await job(queued.body.id);
       const eventId = `msg_${randomUUID()}`;
       const payload = JSON.stringify({
@@ -811,6 +850,103 @@ export async function notificationScenarios(
         .send(payload)
         .expect(204);
       assert.equal((await job(emailJob.id)).status, "delivered");
+      await request(app)
+        .post("/webhooks/resend")
+        .set("Content-Type", "application/json")
+        .set("svix-id", eventId)
+        .set("svix-timestamp", String(Math.floor(timestamp.getTime() / 1000)))
+        .set("svix-signature", svix.sign(eventId, timestamp, payload))
+        .send(payload)
+        .expect(204);
+      const expired = new Date(timestamp.getTime() - 600000);
+      await request(app)
+        .post("/webhooks/resend")
+        .set("Content-Type", "application/json")
+        .set("svix-id", eventId)
+        .set("svix-timestamp", String(Math.floor(expired.getTime() / 1000)))
+        .set("svix-signature", svix.sign(eventId, expired, payload))
+        .send(payload)
+        .expect(403);
+      config.telegram = {
+        botId: "123456789",
+        token: "123456789:synthetic-secret-token",
+        username: "axis_test_bot",
+      };
+      await a
+        .post("/api/v1/notification-settings/telegram/link")
+        .send({})
+        .expect(403);
+      await a
+        .post("/api/v1/notification-settings/telegram/link")
+        .set(ha)
+        .send({ user_id: bb.user.id })
+        .expect(400);
+      const linked = await a
+        .post("/api/v1/notification-settings/telegram/link")
+        .set(ha)
+        .send({})
+        .expect(200);
+      await db.transaction().execute((trx) =>
+        receiveTelegramUpdate(
+          trx,
+          config.telegram!.botId,
+          {
+            update_id: 1,
+            message: {
+              from: { id: 999001, is_bot: false },
+              chat: { id: 999001, type: "private" },
+              text: linked.body.code,
+            },
+          },
+          new Date(),
+        ),
+      );
+      const as = (await a.get("/api/v1/notification-settings")).body;
+      assert.equal(as.settings.telegram_destination, "999001");
+      assert.ok(!JSON.stringify(as).includes(config.telegram.token));
+      assert.equal(
+        (await b.get("/api/v1/notification-settings")).body.settings
+          .telegram_destination,
+        null,
+      );
+      await b
+        .delete("/api/v1/notification-settings/telegram")
+        .set(hb)
+        .expect(204);
+      assert.equal(
+        (await a.get("/api/v1/notification-settings")).body.settings
+          .telegram_destination,
+        "999001",
+      );
+      await a
+        .put("/api/v1/notification-settings")
+        .set(ha)
+        .send({
+          telegram_enabled: true,
+          email_enabled: false,
+          fallback_enabled: false,
+          fallback_after_seconds: 300,
+          revision: as.settings.revision,
+          consent: true,
+        })
+        .expect(200);
+      const tg = await a
+        .post("/api/v1/notifications/test")
+        .set(ha)
+        .set("Idempotency-Key", randomUUID())
+        .send({ channel: "telegram", consent: true })
+        .expect(202);
+      await b.get(`/api/v1/notifications/${tg.body.id}`).expect(404);
+      await a
+        .post(`/api/v1/notifications/${tg.body.id}/reconcile`)
+        .set(ha)
+        .send({})
+        .expect(409);
+      await a
+        .post("/api/v1/notification-settings/whatsapp/link")
+        .set(ha)
+        .send({ phone: "+15005550006" })
+        .expect(410);
       await sql`update notification_jobs set next_attempt_at=null,fallback_deadline_at=null,lease_token=null,lease_until=null where user_id in (${aa.user.id},${bb.user.id})`.execute(
         db,
       );

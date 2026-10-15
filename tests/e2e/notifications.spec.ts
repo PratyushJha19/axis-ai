@@ -6,14 +6,14 @@ test("notification settings persist with consent and mock mode never enables a l
   await page.getByRole("link", { name: "Continue with Google" }).click();
   await page
     .getByRole("navigation")
-    .getByRole("button", { name: "Notifications", exact: true })
+    .getByRole("button", { name: "Alerts & channels", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Notification channels" }),
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Simulation mode — no WhatsApp messages or emails are sent.",
+      "Simulation mode — no Telegram messages or emails are sent.",
     ),
   ).toBeVisible();
   await expect(
@@ -34,7 +34,7 @@ test("notification settings persist with consent and mock mode never enables a l
   await page.reload();
   await page
     .getByRole("navigation")
-    .getByRole("button", { name: "Notifications", exact: true })
+    .getByRole("button", { name: "Alerts & channels", exact: true })
     .click();
   await expect(page.getByLabel("Fallback delay (seconds)")).toHaveValue("120");
   await expect(
@@ -43,4 +43,14 @@ test("notification settings persist with consent and mock mode never enables a l
   await expect(
     page.getByRole("button", { name: "Send email test", exact: true }),
   ).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: ".local/m3-notifications-mobile.png",
+    fullPage: true,
+  });
 });

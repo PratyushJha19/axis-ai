@@ -7,6 +7,7 @@
 **Goal:** establish a safe, runnable project without building product features prematurely.
 
 Tasks:
+
 - Inspect repository and existing assets before changes.
 - Confirm package manager, monorepo approach, auth approach, database/ORM, hosting constraints, and model-provider options; record decisions.
 - Create repo structure, lint/format/typecheck/test scripts.
@@ -17,6 +18,7 @@ Tasks:
 - Add threat model and initial runbook.
 
 Acceptance:
+
 - Clean install and documented local startup.
 - Empty database can be migrated from scratch.
 - Health checks work.
@@ -31,6 +33,7 @@ Acceptance:
 Goal: persistent core records with a minimal usable web UI.
 
 Tasks:
+
 - Secure single-owner authentication and server-side ownership scope.
 - Database migrations for users, projects, memory, tasks, task events.
 - CRUD APIs with validation and pagination.
@@ -41,6 +44,7 @@ Tasks:
 - Seed synthetic demo data only.
 
 Acceptance:
+
 - Records survive restart.
 - User scope tests pass.
 - Memory uncertainty/provenance visible.
@@ -48,6 +52,11 @@ Acceptance:
 - Migrations and API contract tests pass.
 
 ## Milestone M1.5 — AI provider foundation (BYOK)
+
+Owner-requested extension on 2026-10-15: [confirmed chat creation](chat-actions.md)
+adds task/reminder drafts and backend confirmation, with ownership, expiry,
+idempotency and UI tests. This narrowly supersedes the read-only restriction below;
+it does not authorize a general M4 external executor.
 
 Added after the owner's completed M2 baseline. Implement secure per-owner provider settings, authenticated encryption, a real Groq adapter, basic persistent chat and bounded read-only memory/task/project retrieval. Preserve M1 and M2. No automatic fallback, tools, autonomous actions, or multi-user onboarding.
 
@@ -58,6 +67,7 @@ Acceptance: encrypted credential lifecycle and redaction, ownership isolation, s
 Goal: dependable reminders independent of AI and web chat.
 
 Tasks:
+
 - Reminder and notification-attempt schema.
 - Worker process with atomic claims/leases.
 - Fake-clock test harness.
@@ -67,6 +77,7 @@ Tasks:
 - Reconciliation for unknown provider outcomes.
 
 Acceptance:
+
 - Worker restart does not lose reminders.
 - Concurrent workers do not duplicate a logical attempt.
 - Provider timeout is represented as unknown and reconciled.
@@ -75,11 +86,25 @@ Acceptance:
 
 ## Milestone M3 — WhatsApp Sandbox and email fallback
 
+**2026-10-15 revision:** Telegram replaces active WhatsApp delivery at the owner's
+request. See ADR-019, `telegram-setup.md` and `telegram-results.md`. Keep durable
+scheduling, owner isolation and retry/crash tests; validate polling/linking and
+sent semantics without inventing delivery receipts. Email fallback is optional.
+Live Telegram acceptance is pending. No M4 scope is authorized.
+
+Current implementation (2026-10-13): the separately requested M3 adds Twilio and
+Resend adapters, durable channel jobs, signed callbacks, consented owner settings,
+fallback and notification history. See `11-m3-messaging-notifications.md`,
+ADR-018 and `m3-results.md` for policies and actual verification. Live Sandbox and
+email acceptance remain pending external configuration and explicit recipient
+authorization. Default delivery remains mock. Stop for review before M4.
+
 Before M3, the owner requested a focused multi-user identity milestone on 2026-10-12: open enrollment for verified Google accounts, preserve existing users, and prove two-session isolation across M1/M1.5/M2. See `multi-user-plan.md` and `multi-user-results.md`. This does not authorize M3 or public deployment.
 
 Goal: end-to-end messaging in a controlled test environment.
 
 Tasks:
+
 - Twilio Sandbox setup using owner-provided credentials.
 - Verify webhook signatures and owner binding.
 - Inbound message normalization.
@@ -90,6 +115,7 @@ Tasks:
 - Clear sandbox/test labels in UI.
 
 Acceptance:
+
 - Test reminder sent to authorized sandbox recipient.
 - Delivery states accurately reflect provider semantics.
 - Unconfirmed WhatsApp triggers email fallback under configured policy.
@@ -102,6 +128,7 @@ Acceptance:
 Goal: central, testable authorization for all external actions.
 
 Tasks:
+
 - Immutable action proposal and payload hash.
 - 24-hour expiry.
 - Approve/reject via web.
@@ -111,6 +138,7 @@ Tasks:
 - Penetration-style tests of direct API bypasses.
 
 Acceptance:
+
 - Unapproved, expired, altered, replayed, and concurrent execution attempts fail safely.
 - High-risk action requires fresh web authentication.
 - Audit events cover full lifecycle.
@@ -121,6 +149,7 @@ Acceptance:
 Goal: make the core system useful every day.
 
 Tasks:
+
 - Home command center.
 - Today/upcoming/overdue task views.
 - Reminder delivery detail and inbox.
@@ -131,6 +160,7 @@ Tasks:
 - Missed-task detection and rescheduling proposal.
 
 Acceptance:
+
 - Briefing reflects persisted state.
 - Planner avoids overlapping accepted blocks and fixed commitments.
 - Missed tasks are proposed for rescheduling, not silently moved.
@@ -141,6 +171,7 @@ Acceptance:
 Goal: integrate schedule context and prove recovery.
 
 Tasks:
+
 - Google Calendar read-only integration with least-privilege scopes.
 - Integration disconnect/revocation.
 - Daily backups, seven-day retention, monthly restore test procedure.
@@ -149,6 +180,7 @@ Tasks:
 - End-to-end tests for recovery and reminder reconciliation.
 
 Acceptance:
+
 - Calendar events appear as read-only commitments.
 - Revoked access is detected and handled.
 - Restore test is documented and successful.
@@ -157,6 +189,7 @@ Acceptance:
 ## Milestone M7 — Follow-on capabilities
 
 Only after core release gates pass:
+
 - Voice-note transcription and speech responses.
 - Rich client/project pipeline.
 - CAT/fitness tracking and other domain-specific modules.
@@ -168,6 +201,7 @@ Only after core release gates pass:
 ## Milestone reporting template
 
 For each milestone, report:
+
 - Scope completed.
 - Files/modules changed.
 - Commands actually run and results.

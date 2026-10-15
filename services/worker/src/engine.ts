@@ -195,7 +195,12 @@ export class ReminderEngine {
       const reconciliations = row.reconcile_count + (reconcile ? 1 : 0);
       let next: Date | null = null,
         attention = false,
-        reason: string | null = null;
+        reason: string | null =
+          status === "sent" &&
+          this.provider.name === "outbox" &&
+          outcome.settled
+            ? "telegram_sent"
+            : null;
       if (status === "failed") {
         if (
           ["transient", "rate_limit"].includes(category || "") &&
@@ -216,7 +221,11 @@ export class ReminderEngine {
               ? "retry_exhausted"
               : category;
         }
-      } else if (status === "unknown" || status === "sent") {
+      } else if (
+        status === "unknown" ||
+        (status === "sent" &&
+          !(this.provider.name === "outbox" && outcome.settled))
+      ) {
         attention = reconciliations >= this.policy.maxReconciliations;
         next = attention
           ? null
@@ -234,7 +243,13 @@ export class ReminderEngine {
       await sql`update reminders set status=${status},next_attempt_at=${next},attention=${attention},reason=${reason},reconcile_count=${reconciliations},lease_token=null,lease_until=null,version=version+1,updated_at=${now} where id=${row.id}`.execute(
         trx,
       );
-      if (status === "delivered" && row.recurrence !== "none") {
+      if (
+        (status === "delivered" ||
+          (status === "sent" &&
+            this.provider.name === "outbox" &&
+            outcome.settled)) &&
+        row.recurrence !== "none"
+      ) {
         try {
           const recurrence = nextOccurrence(
             row.local_due,

@@ -443,6 +443,9 @@ export async function reminderScenarios(
             env: {
               ...process.env,
               DATABASE_URL: connectionString,
+              NOTIFICATION_MODE: "mock",
+              TELEGRAM_BOT_TOKEN: "",
+              RESEND_API_KEY: "",
               LOG_LEVEL: "silent",
               OPENAI_BASE_URL: "http://127.0.0.1:1",
               OPENAI_API_KEY: "synthetic-disabled",
@@ -701,7 +704,11 @@ export async function reminderScenarios(
           process.execPath,
           ["--import", "tsx", "services/worker/src/health.ts"],
           {
-            env: { ...process.env, DATABASE_URL: connectionString },
+            env: {
+              ...process.env,
+              DATABASE_URL: connectionString,
+              NOTIFICATION_MODE: "mock",
+            },
             stdio: ["ignore", "pipe", "pipe"],
           },
         );

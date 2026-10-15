@@ -2,6 +2,11 @@
 
 **Version:** 1.0 | **Priority:** Highest
 
+**2026-10-16 retention update:** Finished one-time reminders and cancelled reminders
+move to Archive, then become eligible for deletion after seven days. Active
+recurrences and unresolved delivery work are protected. See [archive policy](reminder-archive.md)
+and ADR-022 for migration, retention boundaries and verification.
+
 ## 1. Design objective
 
 A reminder is a durable obligation with observable delivery state. It must not exist only in a chat transcript, model context, browser timer, or n8n execution history.
@@ -21,6 +26,7 @@ scheduled -> snoozed -> scheduled
 ```
 
 Implementation may refine states, but must distinguish:
+
 - Internal queueing from provider send.
 - Provider accepted/sent from confirmed delivered.
 - Confirmed failure from uncertain outcome.
@@ -29,6 +35,7 @@ Implementation may refine states, but must distinguish:
 ## 3. Reminder record requirements
 
 Each reminder must include:
+
 - Unique ID and user ID.
 - Human-readable title and minimal notification body.
 - Due timestamp in UTC and IANA timezone.

@@ -1,6 +1,13 @@
 # M3 — Messaging and notification delivery
 
-Status: implementation in progress; no live delivery verified.
+**Superseded for active WhatsApp setup on 2026-10-15:** Use
+[Telegram setup](telegram-setup.md) and ADR-019. Telegram is the new primary;
+WhatsApp history remains inspectable but dispatch is disabled. Email fallback is
+optional. The Twilio sections below document the historical implementation;
+Resend setup still applies only when explicitly enabling optional email.
+
+Status: implementation present; automated verification recorded in `m3-results.md`.
+Live delivery remains unverified. Stop after M3 for review.
 
 ## Repository audit and plan
 
@@ -45,17 +52,17 @@ The default `NOTIFICATION_MODE=mock` preserves M2 simulated receipts. No real jo
 
 ## Environment (server only)
 
-| Variable | Meaning |
-| --- | --- |
-| `NOTIFICATION_MODE` | `mock` by default; explicitly `live` to enable adapters |
-| `WHATSAPP_SANDBOX_MODE` | `true` by default; `false` selects the separate production variables |
-| `NOTIFICATION_PUBLIC_ORIGIN` | Exact externally reachable HTTPS origin, without path/query/credentials; used for links and signature verification |
-| `TWILIO_SANDBOX_ACCOUNT_SID`, `TWILIO_SANDBOX_AUTH_TOKEN`, `TWILIO_SANDBOX_WHATSAPP_FROM` | Sandbox account credentials and `whatsapp:+...` sender |
-| `TWILIO_SANDBOX_CONTENT_SID` | Optional compatible approved template, subject to Sandbox restrictions; not an arbitrary template override |
-| `TWILIO_PRODUCTION_ACCOUNT_SID`, `TWILIO_PRODUCTION_AUTH_TOKEN`, `TWILIO_PRODUCTION_WHATSAPP_FROM`, `TWILIO_PRODUCTION_CONTENT_SID` | Separate production configuration; never substituted for Sandbox values |
-| `RESEND_API_KEY`, `EMAIL_FROM`, `RESEND_WEBHOOK_SECRET` | Resend API key, verified-domain sender email and Svix signing secret |
-| `REMINDER_TIMEOUT_MS`, `REMINDER_LEASE_MS` | Existing finite call timeout and lease; defaults 5s and 60s, lease must exceed twice timeout |
-| `REMINDER_MAX_ATTEMPTS`, `REMINDER_MAX_RECONCILIATIONS`, `REMINDER_RETRY_BASE_MS`, `REMINDER_RETRY_CAP_MS` | Existing bounded worker policy; defaults 3, 3, 30000, 900000 |
+| Variable                                                                                                                            | Meaning                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `NOTIFICATION_MODE`                                                                                                                 | `mock` by default; explicitly `live` to enable adapters                                                            |
+| `WHATSAPP_SANDBOX_MODE`                                                                                                             | `true` by default; `false` selects the separate production variables                                               |
+| `NOTIFICATION_PUBLIC_ORIGIN`                                                                                                        | Exact externally reachable HTTPS origin, without path/query/credentials; used for links and signature verification |
+| `TWILIO_SANDBOX_ACCOUNT_SID`, `TWILIO_SANDBOX_AUTH_TOKEN`, `TWILIO_SANDBOX_WHATSAPP_FROM`                                           | Sandbox account credentials and `whatsapp:+...` sender                                                             |
+| `TWILIO_SANDBOX_CONTENT_SID`                                                                                                        | Optional compatible approved template, subject to Sandbox restrictions; not an arbitrary template override         |
+| `TWILIO_PRODUCTION_ACCOUNT_SID`, `TWILIO_PRODUCTION_AUTH_TOKEN`, `TWILIO_PRODUCTION_WHATSAPP_FROM`, `TWILIO_PRODUCTION_CONTENT_SID` | Separate production configuration; never substituted for Sandbox values                                            |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `RESEND_WEBHOOK_SECRET`                                                                             | Resend API key, verified-domain sender email and Svix signing secret                                               |
+| `REMINDER_TIMEOUT_MS`, `REMINDER_LEASE_MS`                                                                                          | Existing finite call timeout and lease; defaults 5s and 60s, lease must exceed twice timeout                       |
+| `REMINDER_MAX_ATTEMPTS`, `REMINDER_MAX_RECONCILIATIONS`, `REMINDER_RETRY_BASE_MS`, `REMINDER_RETRY_CAP_MS`                          | Existing bounded worker policy; defaults 3, 3, 30000, 900000                                                       |
 
 Missing channel configuration produces a safe configuration failure and eligible fallback. Set secrets privately in ignored `.env`, never in frontend variables or chat. Resend retrieval needs appropriate permission in addition to sending; use the least privilege available for the selected deployment. No free-tier or cost guarantee is made.
 
@@ -76,16 +83,16 @@ Twilio Sandbox permits free-form replies only in a recent inbound service window
 
 All `/api/v1` routes below require the existing session. Mutations require exact Origin and CSRF token. No route accepts an arbitrary destination for sending.
 
-| Route | Behavior |
-| --- | --- |
-| `GET /notification-settings` | Safe settings, verified Google address, provider readiness and Sandbox sender (no credentials) |
-| `PUT /notification-settings` | Enabled channels, fallback delay/enablement, current revision UUID and explicit consent |
-| `POST /notification-settings/whatsapp/link` | `{phone}`; E.164 validation, five linking requests/hour; returns one private expiring code |
-| `DELETE /notification-settings/whatsapp` | Removes phone/proof and disables channel; invalidates queued consent |
-| `POST /notifications/test` | `{channel,consent:true}` plus UUID Idempotency-Key; three fixed tests/hour/user, saved destination only |
-| `GET /notifications?limit=20&offset=0` | Paginated owner delivery history |
-| `GET /notifications/:id` | Owner delivery details and bounded attempt history |
-| `POST /notifications/:id/reconcile` | Empty object; another bounded status-query cycle for an uncertain delivery with a known provider ID, never a resend |
+| Route                                       | Behavior                                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `GET /notification-settings`                | Safe settings, verified Google address, provider readiness and Sandbox sender (no credentials)                      |
+| `PUT /notification-settings`                | Enabled channels, fallback delay/enablement, current revision UUID and explicit consent                             |
+| `POST /notification-settings/whatsapp/link` | `{phone}`; E.164 validation, five linking requests/hour; returns one private expiring code                          |
+| `DELETE /notification-settings/whatsapp`    | Removes phone/proof and disables channel; invalidates queued consent                                                |
+| `POST /notifications/test`                  | `{channel,consent:true}` plus UUID Idempotency-Key; three fixed tests/hour/user, saved destination only             |
+| `GET /notifications?limit=20&offset=0`      | Paginated owner delivery history                                                                                    |
+| `GET /notifications/:id`                    | Owner delivery details and bounded attempt history                                                                  |
+| `POST /notifications/:id/reconcile`         | Empty object; another bounded status-query cycle for an uncertain delivery with a known provider ID, never a resend |
 
 Webhook paths are outside browser authentication and require provider authentication. Bodies are bounded; Twilio uses all form fields in official signature validation and checks account/from/to binding. Resend uses the original bytes and Svix timestamp/signature verification. Unknown messages return an empty acknowledgment without changing records. Event IDs and state precedence prevent replay/downgrade. Webhooks cannot authorize actions or chat tools.
 

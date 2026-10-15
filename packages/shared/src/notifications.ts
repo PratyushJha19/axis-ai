@@ -7,7 +7,8 @@ export const phoneSchema = z
   .pipe(z.string().regex(/^\+[1-9]\d{7,14}$/));
 export const notificationSettingsSchema = z
   .object({
-    whatsapp_enabled: z.boolean(),
+    whatsapp_enabled: z.boolean().default(false),
+    telegram_enabled: z.boolean().default(false),
     email_enabled: z.boolean(),
     fallback_enabled: z.boolean(),
     fallback_after_seconds: z.number().int().min(30).max(86400),
@@ -15,7 +16,7 @@ export const notificationSettingsSchema = z
     revision: z.uuid(),
   })
   .strict();
-export type Channel = "whatsapp" | "email";
+export type Channel = "whatsapp" | "email" | "telegram";
 export type DeliveryStatus =
   | "queued"
   | "submitting"
@@ -30,6 +31,10 @@ export type DeliveryStatus =
   | "suppressed"
   | "blocked";
 export interface NotificationSettings {
+  telegram_destination: string | null;
+  telegram_bot_id: string | null;
+  telegram_verified_at: string | null;
+  telegram_enabled: boolean;
   whatsapp_destination: string | null;
   whatsapp_verified_at: string | null;
   whatsapp_window_until: string | null;
@@ -47,7 +52,8 @@ export interface DeliveryJob {
   occurrence: number | null;
   logical_key: string;
   channel: Channel;
-  provider: "twilio" | "resend";
+  provider: "twilio" | "resend" | "telegram";
+  telegram_bot_id: string | null;
   kind: "reminder" | "test";
   destination: string | null;
   preference_revision: string;

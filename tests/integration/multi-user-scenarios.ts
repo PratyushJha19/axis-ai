@@ -66,8 +66,16 @@ export async function multiUserScenarios(
       vault: new KeyVault(new Map([["test", randomBytes(32)]]), "test"),
       rate: 20,
       adapter: {
-        async generate(config) {
+        async generate(config, messages) {
           calls.push(config.apiKey);
+          if (messages.at(-1)?.content === "Create a fixture task")
+            return {
+              content: JSON.stringify({
+                reply: "Draft",
+                proposal: { kind: "task", title: "Private draft task" },
+              }),
+              usage: null,
+            };
           return { content: "Synthetic private response", usage: null };
         },
       },
@@ -247,6 +255,27 @@ export async function multiUserScenarios(
             .quiet_start,
           null,
         );
+        await a
+          .post(`/api/v1/reminders/${reminder.body.id}/cancel`)
+          .set(headersA)
+          .set("If-Match", "1")
+          .send({})
+          .expect(200);
+        assert.ok(
+          (
+            await a.get("/api/v1/reminders?view=archive").expect(200)
+          ).body.items.some((r: { id: string }) => r.id === reminder.body.id),
+        );
+        assert.equal(
+          (await b.get("/api/v1/reminders?view=archive").expect(200)).body.items
+            .length,
+          0,
+        );
+        assert.ok(
+          !(await a.get("/api/v1/reminders").expect(200)).body.items.some(
+            (r: { id: string }) => r.id === reminder.body.id,
+          ),
+        );
       },
     );
     await t.test(
@@ -322,6 +351,46 @@ export async function multiUserScenarios(
         assert.ok(!logs.includes("synthetic-multi-key-A"));
         assert.ok(!logs.includes("synthetic-multi-key-B"));
         // Leave no foreign test-vault rows for the later rotation CLI scenario.
+        await a.delete("/api/v1/ai/config").set(headersA).expect(204);
+      },
+    );
+    await t.test(
+      "chat action API requires session, CSRF, exact payload and owning account",
+      async () => {
+        await a
+          .put("/api/v1/ai/config")
+          .set(headersA)
+          .send({
+            provider: "groq",
+            model: "test-model",
+            apiKey: "synthetic-action-key",
+          })
+          .expect(200);
+        const response = await a
+          .post("/api/v1/ai/chat")
+          .set(headersA)
+          .send({
+            request_id: randomUUID(),
+            message: "Create a fixture task",
+            consent: true,
+          })
+          .expect(200);
+        const action = response.body.actions[0];
+        const path = `/api/v1/ai/actions/${action.id}/decide`,
+          body = { decision: "confirm", payload_hash: action.payload_hash };
+        await request(app).post(path).send(body).expect(401);
+        await a.post(path).send(body).expect(403);
+        await b.post(path).set(headersB).send(body).expect(404);
+        await a
+          .post(path)
+          .set(headersA)
+          .send({ ...body, payload: { title: "Altered" } })
+          .expect(400);
+        const first = await a.post(path).set(headersA).send(body).expect(200);
+        const replay = await a.post(path).set(headersA).send(body).expect(200);
+        assert.equal(first.body.entity_id, replay.body.entity_id);
+        await b.get(`/api/v1/tasks/${first.body.entity_id}`).expect(404);
+        assert.ok(!logs.includes("Private draft task"));
         await a.delete("/api/v1/ai/config").set(headersA).expect(204);
       },
     );

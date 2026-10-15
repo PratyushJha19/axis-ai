@@ -8,6 +8,7 @@ export const outcomeSchema = z
   .object({
     status: z.enum(["delivered", "sent", "unknown", "failed", "not_found"]),
     messageId: z.uuid().optional(),
+    settled: z.literal(true).optional(),
     category: z
       .enum([
         "transient",

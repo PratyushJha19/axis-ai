@@ -90,6 +90,7 @@ Record material choices here. Do not silently replace decisions.
 ## Decision record template
 
 ### ADR-011 — Local M0 implementation foundation
+
 - **Status:** Accepted engineering choice for reversible local M0; owner policies remain open.
 - **Date:** 2026-10-10
 - **Context:** Documentation-only directory; owner requested a tested M0 and explicitly chose local PostgreSQL over Docker.
@@ -100,6 +101,7 @@ Record material choices here. Do not silently replace decisions.
 - **References:** [Kysely PostgreSQL setup](https://www.kysely.dev/docs/getting-started), [Express 5 migration guidance](https://expressjs.com/en/guide/migrating-5/).
 
 ### ADR-012 — Defer provider and identity policy while failing closed
+
 - **Status:** Accepted M0 boundary; identity deferral superseded by ADR-013. Hosting/model selection remains open.
 - **Date:** 2026-10-10
 - **Context:** M0 asks to confirm auth, hosting and model choices, but provider/privacy and security policies need owner decisions. A health-only foundation requires none of those accounts.
@@ -109,6 +111,7 @@ Record material choices here. Do not silently replace decisions.
 - **Revisit trigger:** Before M1, before any live messaging, or before deployment. Resolve the consented-notification exception versus universal per-action approval in writing before M3 sends anything.
 
 ### ADR-013 — Google owner identity and M1 local application
+
 - **Status:** Accepted for local M1; real-provider manual verification pending.
 - **Date:** 2026-10-10
 - **Context:** Owner selected Google sign-in instead of a local account after requesting the MVP.
@@ -118,6 +121,7 @@ Record material choices here. Do not silently replace decisions.
 - **Revisit trigger:** Real Google acceptance, deployment review, M4 fresh authentication, or owner account transfer.
 
 ### ADR-014 — M1 persistence, privacy and edit contracts
+
 - **Status:** Accepted engineering choice for M1.
 - **Date:** 2026-10-10
 - **Context:** Concurrent/retried forms must not duplicate records or overwrite changes; deleted sensitive memory must not remain in caches/audit.
@@ -171,7 +175,54 @@ Record material choices here. Do not silently replace decisions.
 - **Supersedes:** ADR-015 mock-only transport restriction for explicitly configured M3 live mode; preserves mock default and M2 scheduling semantics. Resolves initial email provider and development fallback policy; production sender/template/domain and live acceptance remain operator setup.
 - **References:** [M3 specification and operations](../11-m3-messaging-notifications.md).
 
+### ADR-019 — Telegram replaces active WhatsApp notifications
+
+- **Status:** Accepted, owner requested 2026-10-15.
+- **Decision:** Use Telegram Bot API for new personal reminders. Keep the existing
+  PostgreSQL scheduler/outbox and worker. Poll with a bot-scoped lease and durable
+  cursor committed with updates; no Telegram webhook or automatic webhook removal.
+  Link private human chats using hashed one-time ten-minute codes, then require
+  explicit dashboard consent. Bot ID is part of the verified destination.
+- **Evidence:** sendMessage success is sent, not delivered/read. It settles the
+  occurrence and advances recurrence. Unknown sends never retry blindly; no
+  applicable delivery lookup exists. Optional email defaults off and is suppressed
+  on confirmed Telegram send.
+- **Migration:** Preserve WhatsApp history; disable its consent and pending dispatch.
+  No automatic recipient/consent conversion or redelivery. Historical adapters
+  remain for evidence and regression tests; active worker disables Twilio.
+- **Cost:** Standard bot API within current free limits, paid broadcasts explicitly
+  disabled. No promise of perpetual pricing or free hosting/email.
+- **Limits:** Polling requires a running worker. Incoming updates last 24 hours;
+  dashboard disconnect is the durable local opt-out. No conversational AI or M4.
+- **References:** `../telegram-setup.md`, `../telegram-results.md`.
+
+### ADR-020 — Dynamic Groq text model selection
+
+- **Status:** Accepted, owner-requested, 2026-10-15.
+- **Decision:** Replace the two-model whitelist with validated model IDs and an explicitly requested, per-user catalog lookup using the entered or encrypted saved key. Keep fixed Groq endpoints, bounded responses, authentication, CSRF protection and per-user rate limits. No shared account catalog cache, automatic model fallback, or automatic inference on lookup.
+- **Scope:** M1.5 maintenance. Existing text-only chat accepts current/new text model IDs; known audio models and autonomous tool systems are identified separately and rejected by selection validation. Provider account permissions remain authoritative. No schema migration required because the model column is already text.
+- **Connection tests:** Up to 1,024 output tokens, subject to the server limit, with existing explicit quota consent. GPT-OSS 20B/120B use low reasoning effort; empty output at the limit has a distinct error. No credentials or raw provider errors are returned.
+- **Validation:** See `../groq-model-results.md`. Live account entitlement remains a user-run check.
+
+### ADR-021 — Confirmed local task/reminder creation from chat
+
+- **Status:** Accepted implementation of the owner's 2026-10-15 request.
+- **Decision:** Extend chat with strict model-generated drafts for create task and create reminder. Save immutable owner-scoped proposals with 24-hour expiry. Explicit web confirmation consumes the exact payload and creates the record atomically through existing domain functions. Model output cannot supply owner, consent, recipient or arbitrary tools.
+- **Safety:** Preserve reminder preview/confirmation, configured timezone, worker and channel consent. Reject invalid/past/ambiguous times and stale timezone previews. No external action policy or high-risk taxonomy is changed; the general M4 executor remains unimplemented.
+- **Compatibility:** A JSON envelope uses ordinary text completions without native tool support. Invalid outputs never become writes. Model prose is not creation evidence; backend status is shown separately. Schema 7 adds proposals and an immutability trigger.
+- **Supersedes:** ADR-016 and M1.5 read-only restrictions only for these two explicitly confirmed internal creations. No broader automation or memory writes.
+- **Evidence:** `../chat-actions.md`; live model interpretation remains a manual acceptance check.
+
+### ADR-022 — Finished reminder archive and seven-day retention
+
+- **Status:** Accepted, explicitly requested by the owner on 2026-10-16.
+- **Decision:** Automatically archive cancelled reminders and settled one-time reminders. Default list is active; archive is a separate owner-scoped view. Persist archive time via migration 008 and a state trigger. Existing finished records receive seven days from migration, rather than immediate deletion.
+- **Retention:** Worker cleanup deletes archived reminders and child delivery details after seven days, in bounded atomic batches. Leased, scheduled or unresolved transport work prevents deletion. Preserve content-free audit/idempotency/deduplication evidence and separate chat history. No external message deletion or resend is authorized.
+- **Consequences:** Worker availability determines when eligible deletion happens. Recurrence with future work and unresolved reminders remain active. Archive has no restore/resend control. Schema readiness becomes 8.
+- **Validation:** `../reminder-archive.md` records database, security and browser evidence. This supersedes indefinite reminder-detail history retention for settled/cancelled reminders only.
+
 ### ADR-XXX — Title
+
 - **Status:** Proposed / Accepted / Superseded
 - **Date:**
 - **Context:**

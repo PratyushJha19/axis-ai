@@ -11,6 +11,7 @@ import type {
   ReminderInput,
 } from "../../../packages/shared/src/reminders";
 import { api } from "./api";
+import { isSettledTelegramReminder } from "../../../packages/shared/src/reminders";
 
 type Page<T> = { items: T[]; hasMore: boolean };
 type Health = {
@@ -46,7 +47,9 @@ const statusLabel = (r: Reminder) =>
   r.status === "sent"
     ? r.channel_policy === "mock_only"
       ? "Mock sent; delivery not confirmed"
-      : "Delivery pending; see Notifications"
+      : r.reason === "telegram_sent"
+        ? "Sent to Telegram; read status unavailable"
+        : "Delivery pending; see Notifications"
     : `${r.status.replaceAll("_", " ")}${r.status === "delivered" && r.channel_policy === "mock_only" ? " (simulated)" : ""}`;
 
 export function Reminders({
@@ -62,6 +65,7 @@ export function Reminders({
   });
   const [offset, setOffset] = useState(0),
     [health, setHealth] = useState<Health | null>(null);
+  const [view, setView] = useState<"active" | "archive">("active");
   const [preferences, setPreferences] = useState<
     (Preferences & { version: number }) | null
   >(null);
@@ -74,15 +78,29 @@ export function Reminders({
   const [tasks, setTasks] = useState<Task[]>([]),
     [projects, setProjects] = useState<Project[]>([]);
   const zone = user.timezone || "UTC";
+  const linkedId = new URLSearchParams(window.location.search).get("reminder");
   const load = useCallback(async () => {
     try {
       const [p, h, prefs, tasks, projects] = await Promise.all([
-        api<Page<Reminder>>(`/reminders?offset=${offset}`),
+        api<Page<Reminder>>(`/reminders?offset=${offset}&view=${view}`),
         api<Health>("/system/status"),
         api<Preferences & { version: number }>("/reminder-preferences"),
         api<Page<Task>>("/tasks?limit=100"),
         api<Page<Project>>("/projects?limit=100"),
       ]);
+      if (
+        linkedId &&
+        /^[a-f0-9-]{36}$/i.test(linkedId) &&
+        !p.items.some((r) => r.id === linkedId)
+      ) {
+        const linked = await api<Reminder>(`/reminders/${linkedId}`);
+        if (Boolean(linked.archived_at) === (view === "archive"))
+          p.items.unshift(linked);
+        else
+          setNotice(
+            "This reminder is in the other view. Switch between Active and Archive to find it.",
+          );
+      }
       setPage(p);
       setHealth(h);
       setPreferences(prefs);
@@ -91,10 +109,21 @@ export function Reminders({
     } catch (e) {
       onError(e);
     }
-  }, [offset, onError]);
+  }, [offset, onError, linkedId, view]);
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (busy || editor) return;
+    const timer = window.setInterval(() => void load(), 15000);
+    return () => window.clearInterval(timer);
+  }, [load, busy, editor]);
+  useEffect(() => {
+    if (linkedId)
+      document
+        .getElementById(`reminder-${linkedId}`)
+        ?.scrollIntoView({ block: "start" });
+  }, [page, linkedId]);
   const cancel = async (row: Reminder) => {
     if (
       !window.confirm(
@@ -122,10 +151,28 @@ export function Reminders({
     <div className="reminder-workspace">
       <section className="panel reminder-panel">
         <h2>Durable reminders</h2>
+        <label>
+          Reminder view
+          <select
+            value={view}
+            onChange={(e) => {
+              setView(e.target.value as "active" | "archive");
+              setOffset(0);
+            }}
+          >
+            <option value="active">Active</option>
+            <option value="archive">Archive</option>
+          </select>
+        </label>
+        <p>
+          Finished and cancelled reminders move to Archive. The worker
+          permanently deletes them and their delivery details after seven days
+          in Archive. Unresolved delivery work delays deletion.
+        </p>
         <p>
           {health?.mode === "live"
             ? "Uses your verified, enabled notification channels. Review channel delivery in Notifications."
-            : "Mock delivery only. No WhatsApp messages or emails are sent."}
+            : "Mock delivery only. No Telegram messages or emails are sent."}
         </p>
         <p className="muted">
           Quiet hours and focus blocks defer all reminders. After downtime, one
@@ -174,7 +221,11 @@ export function Reminders({
           onClose={() => setEditor(null)}
           onSaved={async () => {
             setEditor(null);
-            setNotice(health?.mode === "live" ? "Reminder saved. Delivery will use your enabled channels." : "Reminder saved in PostgreSQL. Delivery is simulated.");
+            setNotice(
+              health?.mode === "live"
+                ? "Reminder saved. Delivery will use your enabled channels."
+                : "Reminder saved in PostgreSQL. Delivery is simulated.",
+            );
             await load();
           }}
           onError={onError}
@@ -183,8 +234,9 @@ export function Reminders({
       {page.items.length === 0 && (
         <section className="panel reminder-panel">
           <p>
-            No reminders on this page. Add a reminder with an explicit time to
-            get started.
+            {view === "archive"
+              ? "Archive is empty. Finished reminders will appear here for seven days."
+              : "No active reminders on this page. Add a reminder with an explicit time to get started."}
           </p>
         </section>
       )}
@@ -192,6 +244,7 @@ export function Reminders({
         <section
           className="panel reminder-panel"
           key={row.id}
+          id={`reminder-${row.id}`}
           aria-label={`Reminder ${row.title}`}
         >
           <h3>{row.title}</h3>
@@ -222,11 +275,24 @@ export function Reminders({
               {projects.find((p) => p.id === row.project_id)?.name ||
                 (row.project_id ? "Linked project" : "No project")}
             </dd>
+            {row.archived_at && (
+              <>
+                <dt>Archive deletion eligible</dt>
+                <dd>
+                  {formatted(
+                    new Date(
+                      Date.parse(row.archived_at) + 7 * 86400000,
+                    ).toISOString(),
+                    row.timezone,
+                  )}
+                </dd>
+              </>
+            )}
             <dt>Delivery policy</dt>
             <dd>
               {row.channel_policy === "mock_only"
                 ? "Mock only · real channels and fallback unavailable"
-                : "WhatsApp with configured email fallback"}
+                : "Telegram · optional email fallback per your saved preferences"}
             </dd>
             {row.reason && (
               <>
@@ -235,32 +301,48 @@ export function Reminders({
               </>
             )}
           </dl>
-          {["scheduled", "snoozed", "failed"].includes(row.status) && (
-            <div className="reminder-actions">
-              <button className="secondary" onClick={() => setEditor({ row })}>
-                Edit / reschedule
-              </button>
-              <button
-                className="secondary"
-                onClick={() => setEditor({ row, snooze: true })}
-              >
-                Snooze
-              </button>
-              <button
-                className="secondary"
-                disabled={busy}
-                onClick={() => void cancel(row)}
-              >
-                Cancel reminder
-              </button>
-            </div>
-          )}
-          {["processing", "unknown", "sent"].includes(row.status) && (
+          {!isSettledTelegramReminder(row) &&
+            (["scheduled", "snoozed", "failed"].includes(row.status) ||
+              (row.channel_policy === "whatsapp_email" &&
+                ["processing", "sent", "unknown"].includes(row.status))) && (
+              <div className="reminder-actions">
+                <button
+                  className="secondary"
+                  onClick={() => setEditor({ row })}
+                >
+                  Edit / reschedule
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => setEditor({ row, snooze: true })}
+                >
+                  Snooze
+                </button>
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => void cancel(row)}
+                >
+                  Cancel reminder
+                </button>
+              </div>
+            )}
+          {isSettledTelegramReminder(row) && (
             <p className="help">
-              Dispatch has started. Changes are blocked until its outcome is
-              reconciled. An unresolved outcome is never blindly resent.
+              Finished — this one-time reminder was sent to Telegram. There are
+              no future occurrences to cancel. The sent message cannot be
+              recalled; its history remains available below.
             </p>
           )}
+          {!isSettledTelegramReminder(row) &&
+            ["processing", "unknown", "sent"].includes(row.status) && (
+              <p className="help">
+                {row.channel_policy === "whatsapp_email"
+                  ? "Queued changes are allowed only before a channel attempt starts. The server rejects edits once dispatch begins."
+                  : "Dispatch has started. Changes are blocked until its outcome is reconciled."}{" "}
+                An unresolved outcome is never blindly resent.
+              </p>
+            )}
           <AttemptHistory
             key={`${row.id}-${row.version}`}
             reminder={row.id}
@@ -603,7 +685,11 @@ function AttemptHistory({
                 {a.provider_message_id && (
                   <span className="help">
                     {" "}
-                    · {a.channel === "mock" ? "Mock receipt" : "Provider reference"} {a.provider_message_id}
+                    ·{" "}
+                    {a.channel === "mock"
+                      ? "Mock receipt"
+                      : "Provider reference"}{" "}
+                    {a.provider_message_id}
                   </span>
                 )}
               </li>

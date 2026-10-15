@@ -39,6 +39,10 @@ export async function aiScenarios(
     vault: new KeyVault(new Map([["test", master]]), "test"),
     rate: 100,
     adapter: {
+      async listModels(key) {
+        seenKey = key;
+        return [{ id: "openai/gpt-oss-20b", restriction: null }];
+      },
       async generate(config, messages) {
         calls++;
         seenKey = config.apiKey;
@@ -109,6 +113,34 @@ export async function aiScenarios(
       await service.test(b, { consent: true }, correlation);
       assert.equal(seenKey, keyB);
       await service.save(a, { ...config, apiKey: keyA }, correlation);
+    },
+  );
+  await t.test(
+    "AI catalog uses only the requesting owner's key and never saves entered keys or generates",
+    async () => {
+      const before = calls;
+      assert.equal(
+        (await service.models(a, {})).models[0]?.id,
+        "openai/gpt-oss-20b",
+      );
+      assert.equal(seenKey, keyA);
+      await service.models(b, {});
+      assert.equal(seenKey, keyB);
+      await service.models(a, { apiKey: "synthetic-unsaved-key" });
+      assert.equal(seenKey, "synthetic-unsaved-key");
+      await service.models(a, {});
+      assert.equal(seenKey, keyA);
+      assert.equal(calls, before);
+      await assert.rejects(service.models(a, { user_id: b }));
+      await service.save(
+        a,
+        { ...config, model: "openai/gpt-oss-20b" },
+        correlation,
+      );
+      assert.equal(
+        ((await service.metadata(a)) as { model: string }).model,
+        "openai/gpt-oss-20b",
+      );
     },
   );
   await t.test(
@@ -299,7 +331,11 @@ export async function aiScenarios(
         ),
       );
       await assert.rejects(
-        service.save(a, { ...config, model: "custom" }, correlation),
+        service.save(
+          a,
+          { ...config, model: "https://custom.invalid" },
+          correlation,
+        ),
       );
     },
   );

@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../../database/src/index.js";
+import { inTransaction } from "../../database/src/index.js";
 import {
   reminderSchema,
   preferenceSchema,
+  isSettledTelegramReminder,
   type Reminder,
   type Preferences,
 } from "../../shared/src/reminders.js";
@@ -112,6 +114,12 @@ async function editable(db: ReminderDB, row: Reminder, version: number) {
       409,
       "Reminder changed. Reload before editing.",
     );
+  if (isSettledTelegramReminder(row))
+    throw new DomainError(
+      "CONFLICT",
+      409,
+      "This one-time reminder was already sent to Telegram. There are no future occurrences to cancel, and the sent message cannot be recalled.",
+    );
   const queued =
     row.channel_policy === "whatsapp_email" &&
     !(
@@ -141,7 +149,7 @@ export async function saveReminder(
 ) {
   const value = reminderSchema.parse(input);
   const due = localToUtc(value.local_due, value.timezone, value.disambiguation);
-  return db.transaction().execute(async (trx) => {
+  return inTransaction(db, async (trx) => {
     let id: string = randomUUID();
     await sql`select id from users where id=${userId} for update`.execute(trx);
     let previous: Reminder | undefined;

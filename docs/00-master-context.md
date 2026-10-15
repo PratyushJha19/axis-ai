@@ -1,5 +1,15 @@
 # AXIS — Master Context
 
+**2026-10-15 chat update:** ADR-021 and `chat-actions.md` add confirmed task and
+reminder creation from chat, superseding earlier read-only restrictions for these
+two internal operations only. General external action execution remains gated.
+
+**2026-10-15 notification update:** The owner selected Telegram instead of paid
+WhatsApp transport. ADR-019 and `telegram-setup.md` supersede WhatsApp requirements
+for the current M3 notification slice. Email fallback is optional and defaults
+off. Telegram confirms sent messages, not delivery/read receipts. Historical
+WhatsApp product direction below is retained for context, not active setup.
+
 **Version:** 1.0 | **Status:** Approved product direction, engineering details partly open  
 **Owner:** Product owner / single initial user  
 **Product name:** AXIS  
@@ -44,6 +54,7 @@ Initial release is for one user. The user's current workload can include CAT pre
 ## 5. Autonomy model
 
 ### Allowed without external-action approval
+
 - Answer questions using accessible records.
 - Search and summarize stored memory.
 - Propose plans and schedules.
@@ -52,12 +63,14 @@ Initial release is for one user. The user's current workload can include CAT pre
 - Send configured reminders/briefings through the user's explicitly connected and consented notification channels, under the notification policy.
 
 ### Requires explicit approval
+
 - Sending a message/email to another person.
 - Creating, modifying, or deleting events in an external calendar.
 - Publishing content, submitting forms, making purchases, transferring money, deleting external records, or taking actions that represent the user.
 - Any other action that changes state outside AXIS, unless a narrow, explicitly approved automation policy is added later.
 
 ### Additional high-risk gate
+
 High-risk actions require both explicit action approval and fresh web authentication. The exact list of high-risk actions and freshness window are open decisions. Until defined, use a conservative classification and do not execute uncertain high-risk actions.
 
 ## 6. Memory model
@@ -76,6 +89,7 @@ Remember routine information by default. Ask before saving sensitive/personal fa
 ## 7. MVP boundary
 
 ### Must ship in MVP
+
 - Basic authenticated single-user web dashboard.
 - Global/project memory capture, search, inspect, correct, archive, and delete.
 - Task and commitment capture, status, priority, due date, project linkage, and confirmation flow for ambiguous input.
@@ -88,6 +102,7 @@ Remember routine information by default. Ask before saving sensitive/personal fa
 - Automated tests for the release blockers in `docs/09-test-plan-and-acceptance.md`.
 
 ### Later, not required for initial release
+
 - Production WhatsApp sender and broader account onboarding.
 - Live WhatsApp calls or phone calling.
 - Full voice assistant; initial follow-on is voice-note transcription and speech responses.
@@ -101,6 +116,7 @@ Remember routine information by default. Ask before saving sensitive/personal fa
 Initial success is trust: the user relies on AXIS to remember commitments and surface important reminders.
 
 Measure:
+
 - Reminder delivery success and time-to-delivery by channel.
 - Number of reminders with unknown/unresolved delivery outcome.
 - Duplicate notification/action rate.
@@ -133,6 +149,7 @@ Do not optimize for message volume or time spent in the app.
 M1.5 resolves the initial inference choice as per-owner BYOK through Groq, with encrypted credentials and no fallback or tools. NVIDIA and other adapters remain pending. This supersedes the open provider choice only for this slice; see `10-m1-5-ai-provider-foundation.md` and ADR-016. AI setup is optional for the existing core and worker.
 
 Do not silently lock these:
+
 - Final hosting provider and exact free-tier limits.
 - Exact model provider(s), pricing limits, and fallback order.
 - Production WhatsApp provider/sender and delivery-status capabilities.
@@ -149,6 +166,7 @@ Do not silently lock these:
 ## 11. Language and status conventions
 
 UI and logs must distinguish:
+
 - **Saved** — persisted successfully.
 - **Scheduled** — reminder/job exists and has a due time.
 - **Sent** — provider accepted/sent the notification; not necessarily read.
@@ -159,3 +177,13 @@ UI and logs must distinguish:
 - **Completed** — verified outcome, not merely a model claim.
 
 Never say “delivered” if the provider only confirms “sent.”
+
+## 12. M3 implementation decisions (2026-10-13)
+
+The requested M3 personal notification scope is documented in
+`11-m3-messaging-notifications.md` and ADR-018. It uses Twilio WhatsApp and Resend
+email, verified user destinations and explicit saved channel consent. The initial
+fallback deadline is configurable, defaulting to 300 seconds, with bounded retries
+and query-only recovery of uncertain sends. This resolves the initial provider and
+fallback defaults above; broader external actions still require the approval gate.
+Live delivery acceptance is pending. See `m3-results.md` for tested outcomes.

@@ -65,10 +65,44 @@ const server = createApp({
     vault: new KeyVault(new Map([["test", randomBytes(32)]]), "test"),
     rate: 20,
     adapter: {
+      async listModels() {
+        return [
+          { id: "openai/gpt-oss-20b", restriction: null },
+          {
+            id: "whisper-large-v3",
+            restriction: "Audio model — text chat only.",
+          },
+        ];
+      },
       async generate(config, messages) {
         if (config.apiKey === "synthetic-invalid-key")
           throw new AIError("credentials");
         const message = messages.at(-1)?.content;
+        if (message === "Create a task to read the report")
+          return {
+            content: JSON.stringify({
+              reply: "Draft",
+              proposal: {
+                kind: "task",
+                title: "Read the report",
+                description: "",
+              },
+            }),
+            usage: null,
+          };
+        if (message === "Remind me on October 16 2099 at 9 am")
+          return {
+            content: JSON.stringify({
+              reply: "Draft",
+              proposal: {
+                kind: "reminder",
+                title: "Review report",
+                local_due: "2099-10-16T09:00",
+                recurrence: "none",
+              },
+            }),
+            usage: null,
+          };
         if (message === "fixture unknown") throw new AIError("timeout", true);
         if (message === "fixture rate limit" && !rateFailureSent) {
           rateFailureSent = true;

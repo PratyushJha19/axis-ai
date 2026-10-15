@@ -4,20 +4,26 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
   ArrowUpRight,
+  Bell,
+  BellRing,
+  ChevronDown,
+  Cpu,
+  Sun,
+  UserRound,
   ArrowRight,
   Check,
   CheckCircle2,
   ChevronRight,
-  Command,
   Folder,
-  LayoutDashboard,
   LogOut,
   Menu,
   MoreHorizontal,
+  PanelRightClose,
   Plus,
   Search,
   Settings,
@@ -34,10 +40,20 @@ import type {
   Task,
   Memory,
 } from "../../../packages/shared/src/contracts";
+import type { Reminder } from "../../../packages/shared/src/reminders";
 import { api, ApiError, setCsrf } from "./api";
 import { Reminders } from "./Reminders";
 import { AISettings, AIChat } from "./AI";
 import { Notifications } from "./Notifications";
+import {
+  burst,
+  cheer,
+  CountUp,
+  hue,
+  ProgressRing,
+  timeUntil,
+  useNow,
+} from "./Engage";
 
 type View =
   | "Overview"
@@ -49,6 +65,18 @@ type View =
   | "Settings"
   | "AI Settings"
   | "Chat";
+const labels: Record<View, string> = {
+  Overview: "Today",
+  Tasks: "Tasks",
+  Projects: "Projects",
+  Memory: "Memory",
+  Reminders: "Reminders",
+  Chat: "Ask AXIS",
+  Settings: "Profile",
+  Notifications: "Alerts & channels",
+  "AI Settings": "AI provider",
+};
+const settingsViews: View[] = ["Settings", "Notifications", "AI Settings"];
 type Kind = "task" | "project" | "memory";
 type RecordItem = Task | Project | Memory;
 type EditorState = { kind: Kind; record?: RecordItem };
@@ -86,11 +114,14 @@ function taskPayload(task: Task) {
   };
 }
 
+const reminderTime = (r: Reminder) =>
+  r.status === "snoozed" && r.next_attempt_at ? r.next_attempt_at : r.due_at;
+
 function Brand() {
   return (
     <div className="brand">
       <span className="brand-mark">
-        <Command size={21} />
+        <img src="/axis-logo.png" alt="" />
       </span>{" "}
       AXIS<span className="brand-dot">.</span>
     </div>
@@ -131,11 +162,43 @@ export function App() {
         : "Overview",
     ),
     [mobile, setMobile] = useState(false),
-    [editor, setEditor] = useState<EditorState | null>(null);
+    [editor, setEditor] = useState<EditorState | null>(null),
+    [dock, setDock] = useState(() => {
+      try {
+        return localStorage.getItem("axis.agentDock") !== "closed";
+      } catch {
+        return true;
+      }
+    });
+  const [settingsOpen, setSettingsOpen] = useState(() => {
+    try {
+      return localStorage.getItem("axis.settingsNav") !== "closed";
+    } catch {
+      return true;
+    }
+  });
+  const toggleSettings = (open: boolean) => {
+    setSettingsOpen(open);
+    try {
+      localStorage.setItem("axis.settingsNav", open ? "open" : "closed");
+    } catch {
+      // Preference is a convenience only.
+    }
+  };
+  const now = useNow();
+  const toggleDock = (open: boolean) => {
+    setDock(open);
+    try {
+      localStorage.setItem("axis.agentDock", open ? "open" : "closed");
+    } catch {
+      // Preference is a convenience only.
+    }
+  };
   const [projects, setProjects] = useState<Project[]>([]),
     [tasks, setTasks] = useState<Task[]>([]),
     [memories, setMemories] = useState<Memory[]>([]);
-  const [projectOptions, setProjectOptions] = useState<Project[]>([]);
+  const [projectOptions, setProjectOptions] = useState<Project[]>([]),
+    [upcoming, setUpcoming] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -144,7 +207,8 @@ export function App() {
     [offset, setOffset] = useState(0),
     [hasMore, setHasMore] = useState(false);
   const [refresh, setRefresh] = useState(0),
-    [filter, setFilter] = useState("all");
+    [filter, setFilter] = useState("all"),
+    [projectFilter, setProjectFilter] = useState("");
   const [stats, setStats] = useState({
     active_tasks: 0,
     completed_tasks: 0,
@@ -190,6 +254,7 @@ export function App() {
   }, [notice]);
   useEffect(() => {
     if (!user) return;
+    if (!["Overview", "Tasks", "Projects", "Memory"].includes(view)) return;
     let active = true;
     const timer = setTimeout(
       () => {
@@ -201,6 +266,8 @@ export function App() {
           offset: String(offset),
           limit: "30",
         });
+        if (view === "Tasks" && projectFilter)
+          params.set("project_id", projectFilter);
         const current =
           view === "Memory"
             ? "memories"
@@ -236,13 +303,37 @@ export function App() {
       active = false;
       clearTimeout(timer);
     };
-  }, [user, view, query, archived, offset, refresh, fail]);
+  }, [user, view, query, archived, offset, projectFilter, refresh, fail]);
+  useEffect(() => {
+    if (!user || view !== "Overview") return;
+    let active = true;
+    api<Page<Reminder>>("/reminders?limit=100&view=active")
+      .then((page) => {
+        if (!active) return;
+        setUpcoming(
+          page.items
+            .filter((r) =>
+              ["scheduled", "snoozed", "processing"].includes(r.status),
+            )
+            .sort((a, b) => reminderTime(a).localeCompare(reminderTime(b)))
+            .slice(0, 4),
+        );
+      })
+      .catch(() => {
+        // Reminders have their own page; the overview stays usable without them.
+        if (active) setUpcoming([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user, view, refresh]);
   function navigate(next: View) {
     setView(next);
     setQuery("");
     setOffset(0);
     setArchived(false);
     setFilter("all");
+    setProjectFilter("");
     setMobile(false);
   }
   function saved() {
@@ -250,7 +341,7 @@ export function App() {
     setNotice("Saved to AXIS.");
     setRefresh((n) => n + 1);
   }
-  async function complete(task: Task) {
+  async function complete(task: Task, from?: Element | null) {
     try {
       await api(`/tasks/${task.id}`, {
         method: "PATCH",
@@ -261,8 +352,11 @@ export function App() {
         }),
       });
       setRefresh((n) => n + 1);
+      if (task.status !== "completed") burst(from ?? null);
       setNotice(
-        task.status === "completed" ? "Task reopened." : "Task completed.",
+        task.status === "completed"
+          ? "Task reopened."
+          : `Task completed. ${cheer()}`,
       );
     } catch (e) {
       fail(e);
@@ -324,7 +418,7 @@ export function App() {
           </div>
           <section className="login-card">
             <span className="card-symbol">
-              <Command size={28} />
+              <img src="/axis-logo.png" alt="" />
             </span>
             <h2>Your workspace awaits.</h2>
             <p>
@@ -387,9 +481,9 @@ export function App() {
   );
   const projectName = (id: string | null) =>
     projectOptions.find((p) => p.id === id)?.name || "Personal";
-  const taskList = (
+  const renderTasks = (items: Task[]) => (
     <div className="task-list">
-      {shownTasks.map((task) => (
+      {items.map((task) => (
         <div
           className={`task-row ${task.status === "completed" ? "is-complete" : ""}`}
           key={task.id}
@@ -397,7 +491,7 @@ export function App() {
           <button
             className="check-task"
             aria-label={`${task.status === "completed" ? "Reopen" : "Complete"} ${task.title}`}
-            onClick={() => void complete(task)}
+            onClick={(e) => void complete(task, e.currentTarget)}
           >
             {task.status === "completed" && <Check size={14} />}
           </button>
@@ -428,6 +522,21 @@ export function App() {
       ))}
     </div>
   );
+  const taskList = renderTasks(shownTasks);
+  const upNext = tasks
+    .filter((t) => !["completed", "cancelled"].includes(t.status))
+    .slice(0, 6);
+  const activeProjects = projects.filter((p) => p.status === "active");
+  const totalTasks = stats.completed_tasks + stats.active_tasks,
+    doneRate = totalTasks ? stats.completed_tasks / totalTasks : 0,
+    firstName = user.display_name.split(" ")[0],
+    isSettings = settingsViews.includes(view);
+  const heroLine =
+    stats.active_tasks === 0
+      ? "Inbox zero. Enjoy the quiet, or start something new."
+      : doneRate >= 0.75
+        ? `You're on fire. Only ${stats.active_tasks} left to clear.`
+        : `${stats.active_tasks} open ${stats.active_tasks === 1 ? "task" : "tasks"}. Knock one out and watch the ring fill.`;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobile ? "open" : ""}`}>
@@ -436,45 +545,76 @@ export function App() {
         <nav aria-label="Main navigation">
           {(
             [
-              [LayoutDashboard, "Overview"],
+              [Sun, "Overview"],
               [ListTodo, "Tasks"],
               [Folder, "Projects"],
               [Brain, "Memory"],
-              [Clock3, "Reminders"],
-              [Clock3, "Notifications"],
+              [BellRing, "Reminders"],
               [Sparkles, "Chat"],
-              [Settings, "AI Settings"],
             ] as const
-          ).map(([Icon, label]) => (
+          ).map(([Icon, key]) => (
             <button
-              key={label}
-              className={view === label ? "active" : ""}
-              onClick={() => navigate(label)}
+              key={key}
+              className={`nav-${key.toLowerCase()} ${view === key ? "active" : ""}`}
+              onClick={() => navigate(key)}
             >
-              <Icon size={19} />
-              {label}
-              {label === "Tasks" && (
+              <span className="nav-icon">
+                <Icon size={17} />
+              </span>
+              {labels[key]}
+              {key === "Tasks" && (
                 <span className="nav-count">{stats.active_tasks}</span>
               )}
             </button>
           ))}
+          <div className="nav-group">
+            <div className="nav-group-head">
+              <button
+                className={`nav-settings ${isSettings ? "active" : ""}`}
+                onClick={() => {
+                  toggleSettings(true);
+                  navigate("Settings");
+                }}
+              >
+                <span className="nav-icon">
+                  <Settings size={17} />
+                </span>
+                Settings
+              </button>
+              <button
+                className="icon-button nav-chevron"
+                aria-label={
+                  settingsOpen ? "Collapse settings" : "Expand settings"
+                }
+                aria-expanded={settingsOpen}
+                onClick={() => toggleSettings(!settingsOpen)}
+              >
+                <ChevronDown size={15} />
+              </button>
+            </div>
+            {(settingsOpen || isSettings) && (
+              <div className="nav-sub">
+                {(
+                  [
+                    [UserRound, "Settings"],
+                    [Bell, "Notifications"],
+                    [Cpu, "AI Settings"],
+                  ] as const
+                ).map(([Icon, key]) => (
+                  <button
+                    key={key}
+                    className={view === key ? "active" : ""}
+                    onClick={() => navigate(key)}
+                  >
+                    <Icon size={15} />
+                    {labels[key]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </nav>
-        <div className="sidebar-note">
-          <span className="mini-orbit" />
-          <strong>Space for what matters.</strong>
-          <p>
-            Capture it here.
-            <br />
-            Give your mind a little room.
-          </p>
-        </div>
         <div className="sidebar-bottom">
-          <button
-            onClick={() => navigate("Settings")}
-            className={view === "Settings" ? "active" : ""}
-          >
-            <Settings size={18} /> Settings
-          </button>
           <div className="profile">
             <span className="avatar">
               {user.display_name.slice(0, 1).toUpperCase()}
@@ -493,7 +633,9 @@ export function App() {
           </div>
         </div>
       </aside>
-      <div className="workspace">
+      <div
+        className={`workspace ${view === "Overview" && dock ? "docked" : ""}`}
+      >
         <header className="topbar">
           <button
             className="icon-button mobile-menu"
@@ -503,7 +645,8 @@ export function App() {
             <Menu />
           </button>
           <div className="breadcrumb">
-            Workspace <ChevronRight size={13} /> <strong>{view}</strong>
+            {isSettings ? "Settings" : "Workspace"} <ChevronRight size={13} />{" "}
+            <strong>{labels[view]}</strong>
           </div>
           <div className="topbar-right">
             <span className="local-badge">
@@ -518,7 +661,9 @@ export function App() {
           </div>
         </header>
         <main className="main-content">
-          <div className="page-heading">
+          <div
+            className={`page-heading ${view === "Overview" ? "sr-only" : ""}`}
+          >
             <div>
               <div className="eyebrow">
                 {view === "Overview"
@@ -532,11 +677,7 @@ export function App() {
                       .toUpperCase()
                   : "YOUR WORKSPACE, ORGANIZED"}
               </div>
-              <h1>
-                {view === "Overview"
-                  ? `Welcome back, ${user.display_name.split(" ")[0]}.`
-                  : view}
-              </h1>
+              <h1>{view === "Overview" ? labels.Overview : labels[view]}</h1>
               <p>
                 {view === "Overview"
                   ? "Make room for a focused day. Here’s where things stand."
@@ -546,7 +687,15 @@ export function App() {
                       ? "Keep the bigger picture in view."
                       : view === "Memory"
                         ? "Useful context, right where you left it."
-                        : "A workspace that works your way."}
+                        : view === "Reminders"
+                          ? "Future you says thanks."
+                          : view === "Chat"
+                            ? "Think out loud. AXIS turns it into action."
+                            : view === "Notifications"
+                              ? "Choose how and where AXIS reaches you."
+                              : view === "AI Settings"
+                                ? "Bring your own model and key."
+                                : "A workspace that works your way."}
               </p>
             </div>
             {view !== "Overview" &&
@@ -598,54 +747,91 @@ export function App() {
             </div>
           )}
           {view === "Overview" && (
-            <>
-              <div className="stat-grid">
-                {[
-                  [
-                    ListTodo,
-                    "Open tasks",
-                    stats.active_tasks,
-                    "Ready for your next step",
-                  ],
-                  [
-                    CheckCircle2,
-                    "Completed",
-                    stats.completed_tasks,
-                    "Progress, one thing at a time",
-                  ],
-                  [
-                    Folder,
-                    "Active projects",
-                    stats.projects,
-                    "The bigger picture",
-                  ],
-                  [
-                    Brain,
-                    "Memories",
-                    stats.memories,
-                    "Context you can come back to",
-                  ],
-                ].map(([Icon, label, count, description]) => {
-                  const StatIcon = Icon as typeof ListTodo;
-                  return (
-                    <div className="stat-card" key={String(label)}>
-                      <div>
-                        <span>{String(label)}</span>
-                        <StatIcon size={17} />
-                      </div>
-                      <strong>{String(count)}</strong>
-                      <small>{String(description)}</small>
+            <div className={`overview-layout ${dock ? "with-dock" : ""}`}>
+              <div className="overview-main">
+                <section className="hero">
+                  <div className="hero-copy">
+                    <span className="eyebrow">
+                      {new Intl.DateTimeFormat("en", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                        timeZone: user.timezone || deviceZone,
+                      })
+                        .format(new Date(now))
+                        .toUpperCase()}
+                    </span>
+                    <h1>{`Welcome back, ${firstName}.`}</h1>
+                    <p>{heroLine}</p>
+                    <div className="hero-actions">
+                      <button
+                        className="primary"
+                        onClick={() => setEditor({ kind: "task" })}
+                      >
+                        <Plus size={16} /> Capture a task
+                      </button>
+                      {!dock && (
+                        <button
+                          className="secondary"
+                          onClick={() => toggleDock(true)}
+                        >
+                          <Sparkles size={16} /> Ask AXIS
+                        </button>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-              <div className="overview-grid">
-                <section className="panel recent-panel">
+                  </div>
+                  <ProgressRing value={doneRate} size={92} stroke={8}>
+                    <strong>
+                      <CountUp value={Math.round(doneRate * 100)} />%
+                    </strong>
+                    <small>complete</small>
+                  </ProgressRing>
+                </section>
+                <div className="stat-tiles">
+                  {(
+                    [
+                      [
+                        ListTodo,
+                        "Open tasks",
+                        stats.active_tasks,
+                        "Tasks",
+                        "blue",
+                      ],
+                      [
+                        CheckCircle2,
+                        "Completed",
+                        stats.completed_tasks,
+                        "Tasks",
+                        "green",
+                      ],
+                      [
+                        Folder,
+                        "Projects",
+                        stats.projects,
+                        "Projects",
+                        "violet",
+                      ],
+                      [Brain, "Memories", stats.memories, "Memory", "teal"],
+                    ] as const
+                  ).map(([Icon, label, count, target, tone]) => (
+                    <button
+                      key={label}
+                      className={`stat-tile tone-${tone}`}
+                      onClick={() => navigate(target)}
+                    >
+                      <span className="stat-tile-icon">
+                        <Icon size={18} />
+                      </span>
+                      <strong>
+                        <CountUp value={count} />
+                      </strong>
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+                <section className="panel overview-card">
                   <div className="section-title">
-                    <div>
-                      <span className="eyebrow">YOUR NEXT STEPS</span>
-                      <h2>Recently captured</h2>
-                    </div>
+                    <h2>Up next</h2>
                     <button
                       className="text-button"
                       onClick={() => navigate("Tasks")}
@@ -657,100 +843,172 @@ export function App() {
                     <p className="loading" role="status">
                       Loading your tasks…
                     </p>
-                  ) : tasks.length ? (
-                    taskList
+                  ) : upNext.length ? (
+                    renderTasks(upNext)
                   ) : (
                     <Empty
-                      title="Start with one small thing."
+                      title="Nothing on your plate."
                       onCreate={() => setEditor({ kind: "task" })}
                     >
-                      A task, a deadline, an idea to act on. Give it a home.
+                      Add a task here, or just ask AXIS.
                     </Empty>
                   )}
                   <button
                     className="add-row"
                     onClick={() => setEditor({ kind: "task" })}
                   >
-                    <Plus size={17} /> Capture a task
+                    <Plus size={17} /> Add a task
                   </button>
                 </section>
-                <aside className="overview-side">
-                  <section className="capture-card">
-                    <div className="capture-icon">
-                      <Sparkles size={20} />
-                    </div>
-                    <span className="eyebrow">OFF YOUR MIND</span>
-                    <h2>
-                      Keep the thought. <br />
-                      Clear the head.
-                    </h2>
-                    <p>
-                      Save a useful fact, preference, or decision to your
-                      personal memory.
-                    </p>
-                    <button
-                      className="secondary"
-                      onClick={() => setEditor({ kind: "memory" })}
-                    >
-                      Save a memory <ArrowUpRight size={16} />
-                    </button>
-                  </section>
-                  <section className="panel quiet-card">
-                    <ShieldCheck size={20} />
-                    <h3>You stay in control.</h3>
-                    <p>
-                      This build keeps your tasks and memory locally. Reminders
-                      and external actions are not enabled yet.
-                    </p>
-                  </section>
-                </aside>
-              </div>
-              <section className="panel projects-preview">
-                <div className="section-title">
-                  <h2>Projects in motion</h2>
-                  <button
-                    className="text-button"
-                    onClick={() => navigate("Projects")}
+                <div className="overview-pair">
+                  <section
+                    className="overview-cards"
+                    aria-labelledby="coming-up"
                   >
-                    View projects <ArrowUpRight size={15} />
-                  </button>
-                </div>
-                {projects.filter((p) => p.status === "active").length ? (
-                  <div className="project-mini-grid">
-                    {projects
-                      .filter((p) => p.status === "active")
-                      .slice(0, 3)
-                      .map((p) => (
+                    <div className="cards-heading">
+                      <h2 id="coming-up">Coming up</h2>
+                      <button
+                        className="text-button"
+                        onClick={() => navigate("Reminders")}
+                      >
+                        All reminders <ArrowUpRight size={15} />
+                      </button>
+                    </div>
+                    <div className="mini-cards">
+                      {upcoming.map((r) => {
+                        const when = new Date(reminderTime(r)),
+                          left = timeUntil(reminderTime(r), now);
+                        return (
+                          <button
+                            key={r.id}
+                            className={`mini-card reminder-card tone-${left.tone}`}
+                            onClick={() => navigate("Reminders")}
+                          >
+                            <span className="mini-card-top">
+                              <span className="mini-card-icon">
+                                <BellRing size={15} />
+                              </span>
+                              <span className="countdown">{left.text}</span>
+                            </span>
+                            <strong>{r.title}</strong>
+                            <small>
+                              {new Intl.DateTimeFormat("en", {
+                                weekday: "short",
+                                month: "short",
+                                day: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                                timeZone: user.timezone || deviceZone,
+                              }).format(when)}
+                              {r.recurrence !== "none" && ` · ${r.recurrence}`}
+                              {r.status === "snoozed" && " · snoozed"}
+                            </small>
+                          </button>
+                        );
+                      })}
+                      {upcoming.length === 0 && (
+                        <button
+                          className="mini-card mini-card-empty"
+                          onClick={() => navigate("Reminders")}
+                        >
+                          <span className="mini-card-icon">
+                            <Plus size={15} />
+                          </span>
+                          <strong>No upcoming reminders</strong>
+                          <small>Add one, or ask AXIS</small>
+                        </button>
+                      )}
+                    </div>
+                  </section>
+                  <section
+                    className="overview-cards"
+                    aria-labelledby="projects-heading"
+                  >
+                    <div className="cards-heading">
+                      <h2 id="projects-heading">Projects</h2>
+                      <button
+                        className="text-button"
+                        onClick={() => navigate("Projects")}
+                      >
+                        All projects <ArrowUpRight size={15} />
+                      </button>
+                    </div>
+                    <div className="mini-cards">
+                      {activeProjects.slice(0, 4).map((p) => (
                         <button
                           key={p.id}
-                          className="project-mini"
+                          className="mini-card project-card"
+                          style={{ "--hue": hue(p.id) } as CSSProperties}
                           onClick={() =>
                             setEditor({ kind: "project", record: p })
                           }
                         >
-                          <Folder size={19} />
+                          <span className="mini-card-icon">
+                            <Folder size={15} />
+                          </span>
                           <strong>{p.name}</strong>
-                          <ArrowUpRight size={17} />
+                          <small>{p.description || "No description"}</small>
                         </button>
                       ))}
-                  </div>
-                ) : (
+                      {activeProjects.length === 0 && (
+                        <button
+                          className="mini-card mini-card-empty"
+                          onClick={() => setEditor({ kind: "project" })}
+                        >
+                          <span className="mini-card-icon">
+                            <Plus size={15} />
+                          </span>
+                          <strong>Start a project</strong>
+                          <small>Group related tasks together</small>
+                        </button>
+                      )}
+                    </div>
+                  </section>
+                </div>
+                <div className="quick-actions">
                   <button
-                    className="project-start"
+                    className="secondary"
+                    onClick={() => setEditor({ kind: "memory" })}
+                  >
+                    <Brain size={16} /> Save a memory
+                  </button>
+                  <button
+                    className="secondary"
                     onClick={() => setEditor({ kind: "project" })}
                   >
-                    <span>
-                      <Folder size={20} />
-                    </span>
-                    <div>
-                      <strong>Your next chapter starts here.</strong>
-                      <p>Create a project to bring related work together.</p>
-                    </div>
-                    <Plus size={20} />
+                    <Folder size={16} /> New project
                   </button>
-                )}
-              </section>
-            </>
+                </div>
+              </div>
+              {dock ? (
+                <aside className="agent-dock" aria-label="AXIS agent">
+                  <AIChat
+                    onError={fail}
+                    compact
+                    toolbar={
+                      <button
+                        className="ai-icon-button"
+                        aria-label="Close agent panel"
+                        title="Close agent panel"
+                        onClick={() => toggleDock(false)}
+                      >
+                        <PanelRightClose size={16} />
+                      </button>
+                    }
+                  />
+                </aside>
+              ) : (
+                <button
+                  className="agent-dock-tab"
+                  aria-label="Open agent panel"
+                  title="Open agent panel"
+                  onClick={() => toggleDock(true)}
+                >
+                  <img src="/axis-logo.png" alt="" />
+                  <span>AXIS</span>
+                </button>
+              )}
+            </div>
           )}
           {["Tasks", "Projects", "Memory"].includes(view) && (
             <>
@@ -778,6 +1036,28 @@ export function App() {
                   />{" "}
                   Include archived
                 </label>
+                {view === "Tasks" && (
+                  <label className="project-filter">
+                    <Folder size={15} />
+                    <span className="sr-only">Filter by project</span>
+                    <select
+                      value={projectFilter}
+                      onChange={(e) => {
+                        setProjectFilter(e.target.value);
+                        setOffset(0);
+                      }}
+                    >
+                      <option value="">All projects</option>
+                      {projectOptions
+                        .filter((p) => p.status !== "archived" || archived)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
               </div>
               {view === "Tasks" && (
                 <div className="tabs">
@@ -909,7 +1189,9 @@ export function App() {
             </>
           )}
           {view === "Reminders" && <Reminders user={user} onError={fail} />}
-          {view === "Notifications" && <Notifications onError={fail} />}
+          {view === "Notifications" && (
+            <Notifications onError={fail} timezone={user.timezone} />
+          )}
           {view === "AI Settings" && <AISettings onError={fail} />}
           {view === "Chat" && <AIChat onError={fail} />}
           {view === "Settings" && (

@@ -12,19 +12,33 @@ type Setup = {
   email_verified: boolean;
   mode: "mock" | "live";
   sandbox: boolean;
-  whatsapp_configured: boolean;
+  telegram_configured: boolean;
   email_configured: boolean;
-  whatsapp_from: string | null;
+  telegram_username: string | null;
+  telegram_poll_healthy: boolean;
 };
-export function Notifications({ onError }: { onError: (e: unknown) => void }) {
+export function Notifications({
+  onError,
+  timezone,
+}: {
+  onError: (e: unknown) => void;
+  timezone: string | null;
+}) {
+  const time = (value: string) =>
+    new Intl.DateTimeFormat("en", {
+      timeZone: timezone || "UTC",
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
   const [setup, setSetup] = useState<Setup | null>(null),
     [settings, setSettings] = useState<NotificationSettings | null>(null);
-  const [phone, setPhone] = useState(""),
-    [link, setLink] = useState(""),
+  const [link, setLink] = useState(""),
     [consent, setConsent] = useState(false),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState<(DeliveryJob & {title?:string})[]>([]),
+  const [history, setHistory] = useState<(DeliveryJob & { title?: string })[]>(
+      [],
+    ),
     [offset, setOffset] = useState(0),
     [hasMore, setHasMore] = useState(false);
   const [details, setDetails] = useState<{
@@ -45,7 +59,6 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
     ]);
     setSetup(s);
     setSettings(s.settings);
-    setPhone(s.settings.whatsapp_destination || "");
     setHistory(h.items);
     setHasMore(h.hasMore);
   }, [offset]);
@@ -71,7 +84,7 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
       await api("/notification-settings", {
         method: "PUT",
         body: JSON.stringify({
-          whatsapp_enabled: settings.whatsapp_enabled,
+          telegram_enabled: settings.telegram_enabled,
           email_enabled: settings.email_enabled,
           fallback_enabled: settings.fallback_enabled,
           fallback_after_seconds: settings.fallback_after_seconds,
@@ -103,14 +116,12 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
         <h2>Notification channels</h2>
         <p>
           {setup.mode === "mock"
-            ? "Simulation mode — no WhatsApp messages or emails are sent."
-            : setup.sandbox
-              ? "WhatsApp Sandbox — only joined participants can receive messages."
-              : "Production WhatsApp sender"}
+            ? "Simulation mode — no Telegram messages or emails are sent."
+            : "Telegram notifications — email fallback is optional."}
         </p>
         <p className="muted">
-          WhatsApp:{" "}
-          {setup.whatsapp_configured
+          Telegram:{" "}
+          {setup.telegram_configured
             ? "Provider configured"
             : "Provider setup required"}
           . Email:{" "}
@@ -119,31 +130,28 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
             : "Provider setup required"}
           .
         </p>
-        <h3>Your WhatsApp number</h3>
-        <label>
-          Phone number with country code
-          <input
-            type="tel"
-            value={phone}
-            placeholder="+919876543210"
-            onChange={(e) => setPhone(e.target.value)}
-            maxLength={40}
-          />
-        </label>
+        <h3>Your Telegram account</h3>
+        {setup.mode === "live" && setup.telegram_configured && (
+          <p className="help">
+            {setup.telegram_poll_healthy
+              ? "Telegram connection is receiving updates."
+              : "Waiting for Telegram polling. Start the worker and refresh; check its connection if this persists."}
+          </p>
+        )}
         <p className="help">
-          First join the Sandbox using the join phrase shown in your Twilio
-          console. Then send the private linking code below from this phone to{" "}
-          {setup.whatsapp_from || "your configured WhatsApp sender"}. AXIS does
-          not send a verification message.
+          Open @{setup.telegram_username || "your configured bot"} in Telegram.
+          Request a private linking code below and send it to the bot in a
+          private chat. The worker must be running. Linking does not enable
+          sends until you save consent.
         </p>
         <button
           className="secondary"
-          disabled={busy || !setup.whatsapp_configured}
+          disabled={busy || !setup.telegram_configured}
           onClick={() =>
             void perform(async () => {
               const r = await api<{ code: string }>(
-                "/notification-settings/whatsapp/link",
-                { method: "POST", body: JSON.stringify({ phone }) },
+                "/notification-settings/telegram/link",
+                { method: "POST", body: JSON.stringify({}) },
               );
               setLink(r.code);
             })
@@ -153,18 +161,18 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
         </button>{" "}
         <button
           className="secondary"
-          disabled={busy || !settings.whatsapp_destination}
+          disabled={busy || !settings.telegram_destination}
           onClick={() =>
             void perform(async () => {
-              await api("/notification-settings/whatsapp", {
+              await api("/notification-settings/telegram", {
                 method: "DELETE",
               });
               setLink("");
-              setNotice("WhatsApp number removed.");
+              setNotice("Telegram disconnected.");
             })
           }
         >
-          Remove number
+          Disconnect Telegram
         </button>
         {link && (
           <p role="status">
@@ -173,8 +181,8 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
           </p>
         )}
         <p>
-          Phone:{" "}
-          {settings.whatsapp_verified_at
+          Telegram:{" "}
+          {settings.telegram_verified_at
             ? "Verified; choose whether to enable below."
             : "Not verified"}
         </p>
@@ -193,18 +201,18 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
           <label>
             <input
               type="checkbox"
-              checked={settings.whatsapp_enabled}
-              disabled={!settings.whatsapp_verified_at}
+              checked={settings.telegram_enabled}
+              disabled={!settings.telegram_verified_at}
               onChange={(e) =>
-                setSettings({ ...settings, whatsapp_enabled: e.target.checked })
+                setSettings({ ...settings, telegram_enabled: e.target.checked })
               }
             />{" "}
-            Enable WhatsApp reminders
+            Enable Telegram reminders
           </label>
           <p className="help">
-            Send STOP to the configured WhatsApp sender to opt out. Re-link
-            before enabling again. Free-form reminders require a recent incoming
-            message; outside that window an approved template is required.
+            Send /stop to your Telegram bot to opt out. Link again before
+            enabling. No phone number, template or public webhook URL is
+            required.
           </p>
           <label>
             <input
@@ -228,7 +236,7 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
                 setSettings({ ...settings, fallback_enabled: e.target.checked })
               }
             />{" "}
-            Use email fallback when WhatsApp delivery is unconfirmed
+            Use optional email fallback when sending to Telegram is unconfirmed
           </label>
           <label>
             Fallback delay (seconds)
@@ -246,7 +254,7 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
             />
           </label>
           <p className="help">
-            WhatsApp may arrive after the fallback email. Both outcomes stay
+            Telegram may arrive after the fallback email. Both outcomes stay
             visible. Quiet hours and focus blocks apply to both channels.
             Changing these settings blocks previously queued deliveries with
             older consent; review their history.
@@ -273,16 +281,22 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
         <button
           className="secondary"
           disabled={
-            busy || setup.mode !== "live" || !setup.settings.whatsapp_enabled
+            busy ||
+            setup.mode !== "live" ||
+            !setup.telegram_configured ||
+            !setup.settings.telegram_enabled
           }
-          onClick={() => void testChannel("whatsapp")}
+          onClick={() => void testChannel("telegram")}
         >
-          Send WhatsApp test
+          Send Telegram test
         </button>{" "}
         <button
           className="secondary"
           disabled={
-            busy || setup.mode !== "live" || !setup.settings.email_enabled
+            busy ||
+            setup.mode !== "live" ||
+            !setup.email_configured ||
+            !setup.settings.email_enabled
           }
           onClick={() => void testChannel("email")}
         >
@@ -293,27 +307,42 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
       <section className="panel settings-panel">
         <h2>Delivery history</h2>
         <p className="help">
-          Accepted means the provider received the request. Delivered requires
-          confirmation. Unknown is not proof of failure.
+          Times shown in {timezone || "UTC — set your profile timezone"}.
+        </p>
+        <p className="help">
+          Telegram sent means the bot API confirmed sending, not delivery or
+          reading. Accepted means the provider received the request. Delivered
+          requires confirmation. Unknown is not proof of failure.
         </p>
         {history.length === 0 && <p>No channel deliveries yet.</p>}
         {history.map((job) => (
           <article key={job.id} className="notification-history-item">
             <h3>
-              {job.channel === "whatsapp" ? "WhatsApp" : "Email"}
+              {job.channel === "telegram" ? "Telegram" : "Email"}
               {job.fallback_of ? " fallback" : ""} · {job.kind}
             </h3>
             <p>{job.title || "Requested channel test"}</p>
-            {job.reminder_id && <a href={`/?view=reminders&reminder=${job.reminder_id}`}>Open related reminder</a>}
+            {job.reminder_id && (
+              <a href={`/?view=reminders&reminder=${job.reminder_id}`}>
+                Open related reminder
+              </a>
+            )}
             <p>
               {job.status.replaceAll("_", " ")}
               {job.attention ? " — needs attention" : ""}
             </p>
-            {job.delivered_at && <p className="help">Delivery confirmed: {new Date(job.delivered_at).toLocaleString()}</p>}
-            {job.fallback_deadline_at && <p className="help">Fallback deadline: {new Date(job.fallback_deadline_at).toLocaleString()}</p>}
+            {job.delivered_at && (
+              <p className="help">
+                Delivery confirmed: {time(job.delivered_at)}
+              </p>
+            )}
+            {job.fallback_deadline_at && (
+              <p className="help">
+                Fallback deadline: {time(job.fallback_deadline_at)}
+              </p>
+            )}
             <p className="help">
-              {new Date(job.created_at).toLocaleString()} · {job.attempt_count}{" "}
-              attempts
+              {time(job.created_at)} · {job.attempt_count} attempts
               {job.error_category
                 ? ` · ${job.error_category.replaceAll("_", " ")}`
                 : ""}
@@ -328,7 +357,8 @@ export function Notifications({ onError }: { onError: (e: unknown) => void }) {
             >
               Delivery details
             </button>{" "}
-            {job.attention &&
+            {job.channel !== "telegram" &&
+              job.attention &&
               ["accepted", "sent", "unknown"].includes(job.status) && (
                 <button
                   className="secondary"

@@ -6,9 +6,21 @@ test("AI settings, safe key lifecycle, persisted chat and escaped output through
   page.on("pageerror", (error) => failures.push(error.message));
   await page.goto("/");
   await page.getByRole("link", { name: "Continue with Google" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("IANA timezone").fill("Asia/Kolkata");
+  await page.getByRole("button", { name: "Save profile" }).click();
+  await expect(page.getByRole("status")).toContainText("Profile saved.");
+  await page.reload();
   const nav = page.getByRole("navigation");
-  await nav.getByRole("button", { name: "AI Settings", exact: true }).click();
+  await nav.getByRole("button", { name: "AI provider", exact: true }).click();
   await page.getByLabel("Provider API key").fill("synthetic-browser-key");
+  await page.getByRole("button", { name: "Load Groq models" }).click();
+  await expect(page.getByRole("status")).toContainText("Model list loaded");
+  await expect(page.locator("#groq-models option")).toHaveAttribute(
+    "value",
+    "openai/gpt-oss-20b",
+  );
+  await page.getByLabel("AI model", { exact: true }).fill("openai/gpt-oss-20b");
   await page.getByLabel("Allow a small test request").check();
   await page.getByRole("button", { name: "Test entered key" }).click();
   await expect(page.getByRole("status")).toContainText("Connection verified.");
@@ -19,10 +31,51 @@ test("AI settings, safe key lifecycle, persisted chat and escaped output through
   const metadata = await page.request.get("/api/v1/ai/config");
   expect(await metadata.text()).not.toContain("synthetic-browser-key");
   await page.reload();
-  await nav.getByRole("button", { name: "AI Settings", exact: true }).click();
+  await nav.getByRole("button", { name: "AI provider", exact: true }).click();
   await expect(page.getByText(/API key configured · groq/)).toBeVisible();
   await expect(page.getByLabel("Provider API key")).toHaveValue("");
-  await nav.getByRole("button", { name: "Chat", exact: true }).click();
+  await nav.getByRole("button", { name: "Ask AXIS", exact: true }).click();
+  await page
+    .getByLabel("Message", { exact: true })
+    .fill("Create a task to read the report");
+  await page.getByRole("button", { name: "Send to provider" }).click();
+  await expect(
+    page.getByRole("button", { name: "Confirm create task" }),
+  ).toBeVisible();
+  await page.reload();
+  await nav.getByRole("button", { name: "Ask AXIS", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Conversation", exact: true })
+    .selectOption({ label: "Create a task to read the report" });
+  await page.getByRole("button", { name: "Confirm create task" }).click();
+  await expect(page.getByText(/Created · record/)).toBeVisible();
+  const tasks = await page.request.get("/api/v1/tasks");
+  expect(
+    (await tasks.json()).items.some(
+      (t: { title: string }) => t.title === "Read the report",
+    ),
+  ).toBeTruthy();
+  await page
+    .getByRole("button", { name: "New conversation", exact: true })
+    .click();
+  await page
+    .getByLabel("Message", { exact: true })
+    .fill("Remind me on October 16 2099 at 9 am");
+  await page.getByRole("button", { name: "Send to provider" }).click();
+  await expect(
+    page.getByRole("region", { name: "reminder proposal" }),
+  ).toContainText("2099-10-16 09:00 · Asia/Kolkata");
+  await page.getByRole("button", { name: "Confirm create reminder" }).click();
+  await expect(page.getByText(/Created · record/)).toBeVisible();
+  const reminders = await page.request.get("/api/v1/reminders");
+  expect(
+    (await reminders.json()).items.some(
+      (r: { title: string }) => r.title === "Review report",
+    ),
+  ).toBeTruthy();
+  await page
+    .getByRole("button", { name: "New conversation", exact: true })
+    .click();
   await page
     .getByLabel("Message", { exact: true })
     .fill("Explain a focused morning");
@@ -33,7 +86,7 @@ test("AI settings, safe key lifecycle, persisted chat and escaped output through
     ),
   ).toBeVisible();
   await page.reload();
-  await nav.getByRole("button", { name: "Chat", exact: true }).click();
+  await nav.getByRole("button", { name: "Ask AXIS", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Conversation", exact: true })
     .selectOption({ label: "Explain a focused morning" });
@@ -69,7 +122,7 @@ test("AI settings, safe key lifecycle, persisted chat and escaped output through
   await expect(page.getByLabel("Message", { exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Dismiss request" }).click();
   await expect(page.getByLabel("Message", { exact: true })).toBeEnabled();
-  await nav.getByRole("button", { name: "AI Settings", exact: true }).click();
+  await nav.getByRole("button", { name: "AI provider", exact: true }).click();
   await page.getByLabel("Provider API key").fill("synthetic-invalid-key");
   await page.getByRole("button", { name: "Save AI settings" }).click();
   await expect(page.getByLabel("Provider API key")).toHaveValue("");
@@ -82,7 +135,7 @@ test("AI settings, safe key lifecycle, persisted chat and escaped output through
   await expect(
     page.getByText("No API key configured", { exact: true }),
   ).toBeVisible();
-  await nav.getByRole("button", { name: "Chat", exact: true }).click();
+  await nav.getByRole("button", { name: "Ask AXIS", exact: true }).click();
   await page.getByLabel("Message", { exact: true }).fill("No credentials");
   await page.getByRole("button", { name: "Send to provider" }).click();
   await expect(page.getByRole("alert")).toContainText("Configure a provider");

@@ -18,6 +18,7 @@ export interface DeliveryResult {
   retryAfterMs?: number;
 }
 export interface OutboundNotification {
+  botId?: string | null;
   key: string;
   jobId: string;
   destination: string;
@@ -36,6 +37,7 @@ export interface ChannelAdapter {
   reconcile(id: string, signal: AbortSignal): Promise<DeliveryResult>;
 }
 export interface MessagingConfig {
+  telegram?: { token: string; botId: string; username: string };
   mode: "mock" | "live";
   sandbox: boolean;
   publicOrigin?: string;
@@ -67,34 +69,25 @@ export function messagingConfig(
     "true";
   const config: MessagingConfig = { mode, sandbox };
   if (mode === "mock") return config;
+  if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_BOT_USERNAME) {
+    const token = z
+      .string()
+      .regex(/^[1-9]\d{4,19}:[A-Za-z0-9_-]{20,}$/)
+      .parse(env.TELEGRAM_BOT_TOKEN);
+    config.telegram = {
+      token,
+      botId: token.split(":")[0]!,
+      username: z
+        .string()
+        .regex(/^[A-Za-z0-9_]{5,32}$/)
+        .parse(env.TELEGRAM_BOT_USERNAME.replace(/^@/, "")),
+    };
+  }
   if (env.NOTIFICATION_PUBLIC_ORIGIN)
     config.publicOrigin = httpsOrigin
       .parse(env.NOTIFICATION_PUBLIC_ORIGIN)
       .replace(/\/$/, "");
-  const prefix = sandbox ? "TWILIO_SANDBOX_" : "TWILIO_PRODUCTION_";
-  if (
-    env[`${prefix}ACCOUNT_SID`] &&
-    env[`${prefix}AUTH_TOKEN`] &&
-    env[`${prefix}WHATSAPP_FROM`]
-  ) {
-    config.twilio = {
-      account: z
-        .string()
-        .regex(/^AC[0-9a-f]{32}$/i)
-        .parse(env[`${prefix}ACCOUNT_SID`]),
-      token: z.string().min(16).parse(env[`${prefix}AUTH_TOKEN`]),
-      from: z
-        .string()
-        .regex(/^whatsapp:\+[1-9]\d{7,14}$/)
-        .parse(env[`${prefix}WHATSAPP_FROM`]),
-      contentSid: env[`${prefix}CONTENT_SID`]
-        ? z
-            .string()
-            .regex(/^HX[0-9a-f]{32}$/i)
-            .parse(env[`${prefix}CONTENT_SID`])
-        : undefined,
-    };
-  }
+  // Twilio credentials are intentionally ignored after the Telegram migration.
   if (env.RESEND_API_KEY && env.EMAIL_FROM && env.RESEND_WEBHOOK_SECRET)
     config.email = {
       key: z.string().min(10).parse(env.RESEND_API_KEY),
@@ -165,8 +158,9 @@ export function notificationContent(
     html: `<html lang="en"><body><h1>AXIS reminder</h1><h2>${escape(input.title)}</h2><p>Due ${escape(due)} (${escape(input.timezone)})</p><p>${escape(input.body).replaceAll("\n", "<br>")}</p>${link ? `<p><a href="${escape(link)}">Open reminder in AXIS</a></p>` : ""}</body></html>`,
   };
 }
-async function responseJson(
+export async function responseJson(
   response: Response,
+  maxBytes = 65536,
 ): Promise<Record<string, unknown>> {
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Missing response");
@@ -177,7 +171,7 @@ async function responseJson(
       const part = await reader.read();
       if (part.done) break;
       bytes += part.value.byteLength;
-      if (bytes > 65536) throw new Error("Response too large");
+      if (bytes > maxBytes) throw new Error("Response too large");
       chunks.push(part.value);
     }
     return z
@@ -228,6 +222,67 @@ export function channelAdapters(
       }
     : {};
   return {
+    telegram: {
+      async send(input, signal) {
+        const bot = config.telegram;
+        if (config.mode !== "live" || !bot || input.botId !== bot.botId)
+          return missing;
+        if (!/^[1-9]\d{0,15}$/.test(input.destination)) return missing;
+        const response = await fetcher(
+          `https://api.telegram.org/bot${bot.token}/sendMessage`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal,
+            redirect: "error",
+            body: JSON.stringify({
+              chat_id: input.destination,
+              text: Array.from(
+                notificationContent(input, config.publicOrigin).text,
+              )
+                .slice(0, 4096)
+                .join(""),
+              allow_paid_broadcast: false,
+              link_preview_options: { is_disabled: true },
+            }),
+          },
+        );
+        const data = await responseJson(response);
+        if (
+          response.status === 429 &&
+          data.ok === false &&
+          data.error_code === 429
+        ) {
+          const retry = z
+            .object({ retry_after: z.number().int().min(0).max(86400) })
+            .safeParse(data.parameters);
+          return {
+            status: "failed",
+            category: "rate_limit",
+            retryAfterMs: retry.success ? retry.data.retry_after * 1000 : 30000,
+          };
+        }
+        if (!response.ok || data.ok !== true) return rejection(response);
+        const result = z
+          .object({
+            message_id: z.number().int().positive().safe(),
+            chat: z.object({
+              id: z.number().int().positive().safe(),
+              type: z.literal("private"),
+            }),
+          })
+          .parse(data.result);
+        if (String(result.chat.id) !== input.destination)
+          return { status: "unknown", category: "unknown" };
+        return {
+          status: "sent",
+          messageId: `${bot.botId}:${input.destination}:${result.message_id}`,
+        };
+      },
+      async reconcile() {
+        return { status: "unknown", category: "unknown" };
+      },
+    },
     whatsapp: {
       async send(input, signal) {
         if (config.mode !== "live" || !tw || !config.publicOrigin)

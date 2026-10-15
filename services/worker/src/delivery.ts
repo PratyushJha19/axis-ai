@@ -32,6 +32,7 @@ import type { NotificationProvider } from "./provider.js";
 export function outboxProvider(
   db: Kysely<Database>,
   clock: () => Date = () => new Date(),
+  primaryChannel: "whatsapp" | "telegram" = "whatsapp",
 ): NotificationProvider {
   async function state(key: string) {
     let jobs = (
@@ -54,6 +55,7 @@ export function outboxProvider(
           row.occurrence,
           key,
           clock(),
+          primaryChannel,
         );
         jobs = (
           await sql<DeliveryJob>`select * from notification_jobs where logical_key=${key}`.execute(
@@ -62,6 +64,8 @@ export function outboxProvider(
         ).rows;
       }
     }
+    if (jobs.some((j) => j.channel === "telegram" && j.status === "sent"))
+      return { status: "sent" as const, settled: true as const };
     if (jobs.some((j) => confirmed(j.status)))
       return { status: "delivered" as const };
     if (
@@ -84,6 +88,7 @@ export function outboxProvider(
         input.reminder.occurrence,
         input.key,
         clock(),
+        primaryChannel,
       );
       return state(input.key);
     },
@@ -93,7 +98,7 @@ export function outboxProvider(
 export class DeliveryEngine {
   constructor(
     readonly db: Kysely<Database>,
-    readonly adapters: Record<Channel, ChannelAdapter>,
+    readonly adapters: Partial<Record<Channel, ChannelAdapter>>,
     readonly logger: Logger,
     readonly clock: () => Date = () => new Date(),
     readonly policy: WorkerPolicy = workerPolicy(),
@@ -102,15 +107,19 @@ export class DeliveryEngine {
   async fallbacks() {
     const now = this.clock();
     const candidates = (
-      await sql<DeliveryJob>`select * from notification_jobs where channel='whatsapp' and kind='reminder' and fallback_deadline_at is not null and (fallback_deadline_at<=${now} or status in ('delivered','read','failed','undelivered','blocked')) order by fallback_deadline_at limit 1`.execute(
+      await sql<DeliveryJob>`select * from notification_jobs where channel in ('whatsapp','telegram') and kind='reminder' and fallback_deadline_at is not null and (fallback_deadline_at<=${now} or status in ('delivered','read','failed','undelivered','blocked')) order by fallback_deadline_at limit 1`.execute(
         this.db,
       )
     ).rows;
     for (const candidate of candidates) {
-      if (candidate.provider_message_id && !terminal(candidate.status)) {
+      if (
+        candidate.channel === "whatsapp" &&
+        candidate.provider_message_id &&
+        !terminal(candidate.status)
+      ) {
         const result = await deliveryCall(
           (signal) =>
-            this.adapters.whatsapp.reconcile(
+            this.adapters.whatsapp!.reconcile(
               candidate.provider_message_id!,
               signal,
             ),
@@ -136,7 +145,10 @@ export class DeliveryEngine {
           )
         ).rows[0]!;
         if (!primary.fallback_deadline_at) return;
-        if (confirmed(primary.status)) {
+        if (
+          confirmed(primary.status) ||
+          (primary.channel === "telegram" && primary.status === "sent")
+        ) {
           await sql`update notification_jobs set fallback_deadline_at=null where id=${primary.id}`.execute(
             trx,
           );
@@ -246,11 +258,14 @@ export class DeliveryEngine {
           ).rows[0]
         : undefined;
       const input: OutboundNotification = {
+        botId: job.telegram_bot_id,
         key: `${job.logical_key}:${job.channel}`,
         jobId: job.id,
         destination: job.destination || "",
         title: reminder?.title || "Your notification channel is connected",
-        body: reminder?.body || "This is the AXIS channel test you requested.",
+        body: reminder
+          ? reminder.body
+          : "This is the AXIS channel test you requested.",
         due: reminder?.due_at || job.created_at,
         timezone: reminder?.timezone || user.timezone || "UTC",
         reminderId: job.reminder_id,
@@ -275,14 +290,19 @@ export class DeliveryEngine {
       if (
         job.preference_revision !== settings.revision ||
         !job.destination ||
-        (job.channel === "whatsapp"
-          ? !settings.whatsapp_enabled ||
-            !settings.whatsapp_verified_at ||
-            job.destination !== settings.whatsapp_destination
-          : !settings.email_enabled ||
-            !user.email_verified_at ||
-            job.destination !== user.email ||
-            job.destination !== settings.email_destination)
+        (job.channel === "telegram"
+          ? !settings.telegram_enabled ||
+            !settings.telegram_verified_at ||
+            job.destination !== settings.telegram_destination ||
+            job.telegram_bot_id !== settings.telegram_bot_id
+          : job.channel === "whatsapp"
+            ? !settings.whatsapp_enabled ||
+              !settings.whatsapp_verified_at ||
+              job.destination !== settings.whatsapp_destination
+            : !settings.email_enabled ||
+              !user.email_verified_at ||
+              job.destination !== user.email ||
+              job.destination !== settings.email_destination)
       ) {
         await release("blocked", "consent_or_destination_changed", null);
         return null;
@@ -336,7 +356,7 @@ export class DeliveryEngine {
         trx,
       );
       const deadline =
-        job.channel === "whatsapp" &&
+        (job.channel === "whatsapp" || job.channel === "telegram") &&
         job.attempt_count === 0 &&
         job.kind === "reminder" &&
         settings.fallback_enabled
@@ -389,7 +409,10 @@ export class DeliveryEngine {
         !work.reconcile &&
         job.attempt_count < this.policy.maxAttempts;
       const attention =
-        !confirmed(status) &&
+        !(
+          confirmed(status) ||
+          (job.channel === "telegram" && status === "sent")
+        ) &&
         !retry &&
         (terminal(status) || reconciliations >= this.policy.maxReconciliations);
       const next = retry
@@ -400,7 +423,9 @@ export class DeliveryEngine {
                 retryDelay(job.attempt_count, this.policy, this.random),
               ),
           )
-        : !terminal(status) && !attention
+        : !terminal(status) &&
+            !(job.channel === "telegram" && status === "sent") &&
+            !attention
           ? new Date(
               now.getTime() +
                 retryDelay(reconciliations + 1, this.policy, this.random),
@@ -440,9 +465,14 @@ export class DeliveryEngine {
           (signal) =>
             work.reconcile
               ? work.job.provider_message_id
-                ? adapter.reconcile(work.job.provider_message_id, signal)
+                ? adapter!.reconcile(work.job.provider_message_id, signal)
                 : Promise.resolve({ status: "unknown", category: "unknown" })
-              : adapter.send(work.input, signal),
+              : adapter
+                ? adapter.send(work.input, signal)
+                : Promise.resolve({
+                    status: "failed",
+                    category: "configuration",
+                  }),
           this.policy.timeoutMs,
         );
         await this.complete(work, outcome);

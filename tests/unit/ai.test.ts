@@ -168,7 +168,17 @@ test("Groq timeout is unknown, bounded, and never automatically retried", async 
 });
 test("AI boundaries reject arbitrary providers/models/endpoints, owner/system input and credentials", () => {
   assert.throws(() => selection.parse({ provider: "custom", model: "x" }));
-  assert.throws(() => selection.parse({ provider: "groq", model: "unknown" }));
+  assert.throws(() =>
+    selection.parse({ provider: "groq", model: "https://evil.invalid" }),
+  );
+  for (const model of [
+    "openai/gpt-oss-20b",
+    "qwen/new-text-model",
+    "future-text-model",
+  ])
+    assert.equal(selection.parse({ provider: "groq", model }).model, model);
+  for (const model of ["whisper-large-v3", "groq/compound", "../model"])
+    assert.throws(() => selection.parse({ provider: "groq", model }));
   assert.throws(() =>
     configInput.parse({ ...config, url: "http://127.0.0.1" }),
   );
@@ -178,4 +188,54 @@ test("AI boundaries reject arbitrary providers/models/endpoints, owner/system in
   );
   assert.throws(() => assertNoCredentials("gsk_" + "x".repeat(30)));
   assert.throws(() => assertNoCredentials("hello " + key, key));
+});
+test("Groq catalog uses fixed endpoint, bounds and filters untrusted model data", async () => {
+  const adapter = groqAdapter(1000, async (url, options) => {
+    assert.equal(url, "https://api.groq.com/openai/v1/models");
+    assert.equal(options?.method, "GET");
+    assert.equal(options?.redirect, "error");
+    assert.equal(
+      (options?.headers as Record<string, string>).Authorization,
+      `Bearer ${key}`,
+    );
+    return Response.json({
+      data: [
+        { id: "new/model" },
+        { id: "new/model" },
+        { id: "old", active: false },
+        { id: key },
+        { id: "whisper-large-v3" },
+      ],
+    });
+  });
+  const models = await adapter.listModels!(key);
+  assert.deepEqual(
+    models.map((m) => m.id),
+    ["new/model", "whisper-large-v3"],
+  );
+  assert.equal(models[0]!.restriction, null);
+  assert.match(models[1]!.restriction!, /Audio/);
+  for (const response of [
+    Response.json({ data: [{ id: "https://evil.invalid" }] }),
+    new Response("x".repeat(256001)),
+    new Response(key, { status: 401 }),
+  ]) {
+    await assert.rejects(
+      groqAdapter(1000, async () => response).listModels!(key),
+      (e) => e instanceof AIError && !String(e).includes(key),
+    );
+  }
+});
+test("Groq reasoning models receive a bounded budget and report empty exhausted output", async () => {
+  await assert.rejects(
+    groqAdapter(1000, async (_url, options) => {
+      const body = JSON.parse(String(options?.body));
+      assert.equal(body.reasoning_effort, "low");
+      assert.equal(body.max_completion_tokens, 1024);
+      return Response.json({
+        choices: [{ finish_reason: "length", message: { content: "" } }],
+      });
+    }).generate({ ...config, model: "openai/gpt-oss-20b" }, []),
+    (e) => e instanceof AIError && e.code === "output_limit" && !e.uncertain,
+  );
 });

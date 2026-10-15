@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowUp, Check, RotateCw, SquarePen } from "lucide-react";
 import { api } from "./api";
+import type { ChatAction } from "../../../packages/shared/src/chat-actions";
 
 type Config = {
   provider: string;
@@ -10,6 +12,7 @@ type Config = {
 };
 type Provider = { id: string; name: string; models: string[] };
 type History = {
+  actions?: ChatAction[];
   messages: {
     id: string;
     role: string;
@@ -31,6 +34,8 @@ const errors: Record<string, string> = {
   quota: "Provider quota exhausted.",
   rate_limit: "Provider rate limit reached. Wait before retrying.",
   model: "Model unavailable. Check AI Settings.",
+  output_limit:
+    "Output limit reached before a text answer. Increase the server token limit or choose another model.",
   rejected: "Provider rejected this request.",
   timeout:
     "Provider outcome unknown after timeout. This request will not be resent.",
@@ -43,8 +48,11 @@ export function AISettings({ onError }: { onError: (error: unknown) => void }) {
     [enabled, setEnabled] = useState(false),
     [config, setConfig] = useState<Config | null>(null);
   const [provider, setProvider] = useState("groq"),
-    [model, setModel] = useState("llama-3.1-8b-instant"),
+    [model, setModel] = useState(""),
     [key, setKey] = useState("");
+  const [models, setModels] = useState<
+    { id: string; restriction: string | null }[]
+  >([]);
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
     [consent, setConsent] = useState(false);
@@ -67,13 +75,30 @@ export function AISettings({ onError }: { onError: (error: unknown) => void }) {
       ),
     ]).catch(onError);
   }, [onError]);
-  async function perform(action: "save" | "test" | "saved" | "delete") {
+  async function perform(
+    action: "save" | "test" | "saved" | "delete" | "models",
+  ) {
     setBusy(true);
     setNotice("");
     try {
-      if (action === "delete") {
+      if (action === "models") {
+        const result = await api<{
+          models: { id: string; restriction: string | null }[];
+        }>("/ai/models", {
+          method: "POST",
+          body: JSON.stringify(key ? { apiKey: key } : {}),
+        });
+        setModels(result.models);
+        setNotice(
+          result.models.length
+            ? "Model list loaded. Availability still depends on your Groq project permissions."
+            : "Groq returned no active models. You can enter a text model ID manually.",
+        );
+        return;
+      } else if (action === "delete") {
         await api("/ai/config", { method: "DELETE" });
         setKey("");
+        setModels([]);
         setNotice(
           "Stored key deleted. Revoke it separately with the provider if needed.",
         );
@@ -141,9 +166,8 @@ export function AISettings({ onError }: { onError: (error: unknown) => void }) {
             value={provider}
             onChange={(event) => {
               setProvider(event.target.value);
-              setModel(
-                registry.find((p) => p.id === event.target.value)!.models[0]!,
-              );
+              setModel("");
+              setModels([]);
               setKey("");
             }}
           >
@@ -156,21 +180,40 @@ export function AISettings({ onError }: { onError: (error: unknown) => void }) {
         </label>
         <label>
           AI model
-          <select
+          <input
+            list="groq-models"
+            required
+            maxLength={200}
             value={model}
             onChange={(event) => setModel(event.target.value)}
-          >
-            {registry
-              .find((p) => p.id === provider)
-              ?.models.map((m) => (
-                <option key={m}>{m}</option>
+            placeholder="Load models below or enter a text model ID"
+          />
+          <datalist id="groq-models">
+            {models
+              .filter((m) => !m.restriction)
+              .map((m) => (
+                <option key={m.id} value={m.id} />
               ))}
-          </select>
+          </datalist>
         </label>
         <small>
-          Maintained model list. Availability depends on your provider account;
-          no automatic fallback.
+          Choose a loaded model or enter any Groq text-chat model ID. Audio
+          models require a separate interface. No automatic fallback.
         </small>
+        {models.some((m) => m.restriction) && (
+          <details>
+            <summary>Models requiring another interface</summary>
+            <ul>
+              {models
+                .filter((m) => m.restriction)
+                .map((m) => (
+                  <li key={m.id}>
+                    {m.id}: {m.restriction}
+                  </li>
+                ))}
+            </ul>
+          </details>
+        )}
         <label>
           Provider API key
           <input
@@ -179,7 +222,10 @@ export function AISettings({ onError }: { onError: (error: unknown) => void }) {
             spellCheck={false}
             maxLength={512}
             value={key}
-            onChange={(event) => setKey(event.target.value)}
+            onChange={(event) => {
+              setKey(event.target.value);
+              setModels([]);
+            }}
             placeholder={
               config
                 ? "Leave blank to keep saved key"
@@ -189,8 +235,16 @@ export function AISettings({ onError }: { onError: (error: unknown) => void }) {
         </label>
         <div className="ai-actions">
           <button
-            className="primary"
+            type="button"
+            className="secondary"
             disabled={busy || !enabled || (!key && !config)}
+            onClick={() => void perform("models")}
+          >
+            Load Groq models
+          </button>
+          <button
+            className="primary"
+            disabled={busy || !enabled || !model.trim() || (!key && !config)}
           >
             Save AI settings
           </button>
@@ -209,13 +263,14 @@ export function AISettings({ onError }: { onError: (error: unknown) => void }) {
             checked={consent}
             onChange={(event) => setConsent(event.target.checked)}
           />
-          Allow a small test request to this provider (may use quota).
+          Allow a small test request to this provider (up to 1,024 output
+          tokens; may use quota).
         </label>
         <div className="ai-actions">
           <button
             className="secondary"
             type="button"
-            disabled={busy || !enabled || !key || !consent}
+            disabled={busy || !enabled || !model.trim() || !key || !consent}
             onClick={() => void perform("test")}
           >
             Test entered key
@@ -241,7 +296,21 @@ export function AISettings({ onError }: { onError: (error: unknown) => void }) {
   );
 }
 
-export function AIChat({ onError }: { onError: (error: unknown) => void }) {
+const suggestions = [
+  "Remind me tomorrow at 9am to call the bank",
+  "Add a task to review my budget this week",
+  "Help me plan a focused afternoon",
+];
+
+export function AIChat({
+  onError,
+  compact = false,
+  toolbar,
+}: {
+  onError: (error: unknown) => void;
+  compact?: boolean;
+  toolbar?: ReactNode;
+}) {
   const [conversations, setConversations] = useState<
       { id: string; title: string }[]
     >([]),
@@ -261,6 +330,17 @@ export function AIChat({ onError }: { onError: (error: unknown) => void }) {
     include_context: boolean;
     consent: true;
   }>();
+  const thread = useRef<HTMLDivElement>(null),
+    input = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    thread.current?.scrollTo({ top: thread.current.scrollHeight });
+  }, [history, busy]);
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [message]);
   const list = async () =>
     setConversations(
       (
@@ -359,30 +439,45 @@ export function AIChat({ onError }: { onError: (error: unknown) => void }) {
     }
   }
   const latest = history.requests[0];
+  async function decide(action: ChatAction, decision: "confirm" | "reject") {
+    setBusy(true);
+    setNotice("");
+    try {
+      await api(`/ai/actions/${action.id}/decide`, {
+        method: "POST",
+        body: JSON.stringify({ decision, payload_hash: action.payload_hash }),
+      });
+      const result = await api<History>(
+        `/ai/conversations/${action.conversation_id}`,
+      );
+      setHistory(result);
+      setNotice(
+        decision === "confirm"
+          ? "Created successfully. Open Tasks or Reminders to manage it."
+          : "Proposal dismissed. Nothing was created.",
+      );
+    } catch (error) {
+      onError(error);
+      setNotice(
+        "Could not confirm the result. Refresh history before trying again; the same proposal cannot create a duplicate.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  const sending =
+    busy &&
+    pending !== undefined &&
+    !history.messages.some((m) => m.request_id === pending.request_id);
+  const canSend = !busy && !pending && message.trim().length > 0;
   return (
-    <section className="panel ai-panel">
-      <h2>Chat with AXIS</h2>
-      <p>
-        Responses are AI-generated and unverified. Chat cannot change records or
-        execute actions. Sending shares this conversation’s recent messages with
-        your configured provider and may use paid quota.
-      </p>
-      <div className="ai-actions">
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => {
-            setId(undefined);
-            setHistory({ messages: [], requests: [] });
-            setMessage("");
-            setPending(undefined);
-            setNotice("");
-          }}
-        >
-          New conversation
-        </button>
-        <label>
-          Conversation
+    <section className={`panel ai-chat ${compact ? "compact" : ""}`}>
+      <header className="ai-chat-bar">
+        {compact && (
+          <img className="ai-chat-logo" src="/axis-logo.png" alt="" />
+        )}
+        <label className="ai-chat-picker">
+          <span className="sr-only">Conversation</span>
           <select
             disabled={busy}
             value={id || ""}
@@ -400,97 +495,244 @@ export function AIChat({ onError }: { onError: (error: unknown) => void }) {
         </label>
         {id && (
           <button
-            className="secondary"
+            className="ai-icon-button"
             disabled={busy}
+            aria-label="Refresh history"
+            title="Refresh history"
             onClick={() => void open(id)}
           >
-            Refresh history
+            <RotateCw size={16} />
           </button>
         )}
-      </div>
-      <div className="ai-messages" aria-label="Conversation messages">
+        <button
+          className="ai-icon-button"
+          disabled={busy}
+          title="New conversation"
+          aria-label="New conversation"
+          onClick={() => {
+            setId(undefined);
+            setHistory({ messages: [], requests: [] });
+            setMessage("");
+            setPending(undefined);
+            setNotice("");
+          }}
+        >
+          <SquarePen size={16} />
+          {!compact && <span>New conversation</span>}
+        </button>
+        {toolbar}
+      </header>
+      <div
+        className="ai-thread"
+        ref={thread}
+        aria-label="Conversation messages"
+      >
+        {history.messages.length === 0 && !sending && (
+          <div className="ai-welcome">
+            <img src="/axis-logo.png" alt="" />
+            <h2>How can I help?</h2>
+            <p>Ask anything, or have AXIS set up a task or reminder.</p>
+            <div className="ai-suggestions">
+              {suggestions.map((text) => (
+                <button
+                  key={text}
+                  type="button"
+                  disabled={busy || Boolean(pending)}
+                  onClick={() => {
+                    setMessage(text);
+                    input.current?.focus();
+                  }}
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {history.messages.map((m) => (
           <article key={m.id} className={`ai-message ${m.role}`}>
-            <strong>
+            <span className="sr-only">
               {m.role === "user" ? "You" : `AXIS · ${m.model || "AI"}`}
-            </strong>
+            </span>
             <p>{m.content}</p>
+            {(history.actions || [])
+              .filter(
+                (a) => a.request_id === m.request_id && m.role === "assistant",
+              )
+              .map((action) => (
+                <section
+                  className="ai-proposal"
+                  key={action.id}
+                  aria-label={`${action.payload.kind} proposal`}
+                >
+                  <span className="eyebrow">
+                    {action.payload.kind === "task"
+                      ? "NEW TASK"
+                      : "NEW REMINDER"}
+                  </span>
+                  <h3>{action.payload.title}</h3>
+                  {(action.payload.kind === "task"
+                    ? action.payload.description
+                    : action.payload.body) && (
+                    <p>
+                      {action.payload.kind === "task"
+                        ? action.payload.description
+                        : action.payload.body}
+                    </p>
+                  )}
+                  <p className="ai-proposal-meta">
+                    {action.payload.local_due
+                      ? `${action.payload.local_due.replace("T", " ")} · ${action.payload.timezone}`
+                      : "No due date"}
+                    {action.payload.kind === "reminder" &&
+                      ` · Repeats: ${action.payload.recurrence}`}
+                  </p>
+                  {action.status === "succeeded" ? (
+                    <p className="ai-proposal-done">
+                      <Check size={14} /> Created · record {action.entity_id}.
+                      Open{" "}
+                      {action.payload.kind === "task" ? "Tasks" : "Reminders"}{" "}
+                      to manage it.
+                    </p>
+                  ) : action.status === "pending" ? (
+                    <div className="ai-proposal-actions">
+                      <button
+                        className="primary"
+                        disabled={busy}
+                        aria-label={`Confirm create ${action.payload.kind}`}
+                        onClick={() => void decide(action, "confirm")}
+                      >
+                        Create {action.payload.kind}
+                      </button>
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        aria-label="Dismiss proposal"
+                        onClick={() => void decide(action, "reject")}
+                      >
+                        Dismiss
+                      </button>
+                      <small
+                        title={`UTC: ${action.payload.due_at ?? "none"}. To change details, dismiss and ask again.`}
+                      >
+                        Confirm by{" "}
+                        {new Date(action.expires_at).toLocaleString()}
+                      </small>
+                    </div>
+                  ) : (
+                    <p className="ai-proposal-meta">Status: {action.status}</p>
+                  )}
+                </section>
+              ))}
           </article>
         ))}
+        {sending && (
+          <>
+            <div className="ai-bubble-preview" aria-hidden="true">
+              {pending?.message}
+            </div>
+            <div className="ai-typing" aria-label="AXIS is thinking">
+              <span />
+              <span />
+              <span />
+            </div>
+          </>
+        )}
       </div>
-      {latest && latest.status !== "succeeded" && (
-        <p role="status">
-          {latest.status}:{" "}
-          {errors[latest.error_code || ""] || "Waiting for a response."}
-        </p>
-      )}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void send();
-        }}
-      >
-        <label>
-          Message
-          <textarea
-            maxLength={4000}
-            value={message}
-            disabled={busy || Boolean(pending)}
-            onChange={(event) => setMessage(event.target.value)}
-            required
-          />
-        </label>
-        <label className="ai-checkbox">
-          <input
-            type="checkbox"
-            checked={context}
-            disabled={busy || Boolean(pending)}
-            onChange={(event) => setContext(event.target.checked)}
-          />
-          Include relevant tasks, projects and ordinary memories. Sensitive
-          memories are excluded.
-        </label>
-        <button
-          className="primary"
-          disabled={busy || !message.trim() || Boolean(pending)}
-        >
-          Send to provider
-        </button>
-      </form>
-      {pending && (
-        <div className="ai-actions">
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={() => void check()}
-          >
-            Check request status
-          </button>
-          {latest?.retryable && latest.attempts < 3 && (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={() => void send(true)}
-            >
-              Retry failed request (uses quota)
-            </button>
+      {(pending || notice) && !sending && (
+        <div className="ai-chat-status">
+          {latest && latest.status !== "succeeded" && pending ? (
+            <p role="status">
+              {errors[latest.error_code || ""] || "Waiting for a response."}
+            </p>
+          ) : (
+            notice && <p role="status">{notice}</p>
           )}
-          <button
-            className="secondary"
-            disabled={busy || latest?.status === "pending"}
-            onClick={() => {
-              setPending(undefined);
-              setMessage("");
-              setNotice("");
-            }}
-          >
-            Dismiss request
-          </button>
+          {pending && (
+            <div className="ai-chat-status-actions">
+              <button
+                className="text-button"
+                disabled={busy}
+                onClick={() => void check()}
+              >
+                Check request status
+              </button>
+              {latest?.retryable && latest.attempts < 3 && (
+                <button
+                  className="text-button"
+                  disabled={busy}
+                  aria-label="Retry failed request (uses quota)"
+                  onClick={() => void send(true)}
+                >
+                  Retry
+                </button>
+              )}
+              <button
+                className="text-button"
+                disabled={busy || latest?.status === "pending"}
+                onClick={() => {
+                  setPending(undefined);
+                  setMessage("");
+                  setNotice("");
+                }}
+              >
+                Dismiss request
+              </button>
+            </div>
+          )}
         </div>
       )}
-      <p role="status" aria-live="polite">
-        {busy ? "Working…" : notice}
-      </p>
+      <form
+        className="ai-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSend) void send();
+        }}
+      >
+        <textarea
+          ref={input}
+          aria-label="Message"
+          placeholder="Message AXIS…"
+          rows={1}
+          maxLength={4000}
+          value={message}
+          disabled={busy || Boolean(pending)}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              if (canSend) void send();
+            }
+          }}
+          required
+        />
+        <div className="ai-composer-row">
+          <label
+            className="ai-context-toggle"
+            title="Shares relevant tasks, projects and ordinary memories with your provider. Sensitive memories are excluded."
+          >
+            <input
+              type="checkbox"
+              checked={context}
+              disabled={busy || Boolean(pending)}
+              onChange={(event) => setContext(event.target.checked)}
+            />
+            Use my workspace
+          </label>
+          <button
+            className="ai-send"
+            disabled={!canSend}
+            aria-label="Send to provider"
+            title="Send (Enter)"
+          >
+            <ArrowUp size={18} />
+          </button>
+        </div>
+      </form>
+      <small className="ai-footnote">
+        AI can be wrong. Messages go to your configured provider and may use
+        quota. Nothing is saved until you confirm.
+      </small>
     </section>
   );
 }

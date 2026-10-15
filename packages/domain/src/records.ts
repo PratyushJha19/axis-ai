@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../../database/src/index.js";
+import { inTransaction } from "../../database/src/index.js";
 import {
   projectSchema,
   taskSchema,
@@ -142,7 +143,7 @@ export async function saveRecord<K extends Table>(
   options: { key: string } | { id: string; version: number },
 ) {
   const { value, fields } = normalize(table, input);
-  return db.transaction().execute(async (trx) => {
+  return inTransaction(db, async (trx) => {
     let old: RowMap[K] | undefined;
     let id: string;
     if ("id" in options) {

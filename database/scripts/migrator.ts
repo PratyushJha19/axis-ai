@@ -5,6 +5,9 @@ import * as core from "../migrations/002-core.js";
 import * as reminders from "../migrations/003-reminders.js";
 import * as ai from "../migrations/004-ai.js";
 import * as notifications from "../migrations/005-notifications.js";
+import * as telegram from "../migrations/006-telegram.js";
+import * as chatActions from "../migrations/007-chat-actions.js";
+import * as reminderArchive from "../migrations/008-reminder-archive.js";
 
 export function createMigrator(db: Kysely<Database>) {
   return new Migrator({
@@ -16,6 +19,9 @@ export function createMigrator(db: Kysely<Database>) {
         "003-reminders": reminders,
         "004-ai": ai,
         "005-notifications": notifications,
+        "006-telegram": telegram,
+        "007-chat-actions": chatActions,
+        "008-reminder-archive": reminderArchive,
       }),
     },
   });

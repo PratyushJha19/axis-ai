@@ -1,6 +1,12 @@
 # AXIS — Complete Product and Engineering Specification
 
-Version 1.0 | Documentation pack | Implementation not started
+Version 1.0 | Original documentation compilation
+
+Implementation status (2026-10-13): see the canonical modular documents, especially
+`docs/11-m3-messaging-notifications.md`, `docs/m3-results.md` and ADR-018. M3 now
+extends the durable reminder engine with notification adapters and fallback;
+live provider acceptance remains pending. The original text below is retained
+for reference and does not supersede later documented decisions.
 
 > This compilation is for convenient review. The individual Markdown files in the ZIP remain the canonical modular documents.
 

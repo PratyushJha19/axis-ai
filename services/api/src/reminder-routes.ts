@@ -54,9 +54,11 @@ export function reminderRouter(db: Kysely<Database>, mode = "mock_only") {
     });
   });
   router.get("/reminders", async (req, res) => {
-    const page = reminderListSchema.parse(req.query);
+    const page = reminderListSchema
+      .extend({ view: z.enum(["active", "archive"]).default("active") })
+      .parse(req.query);
     const result =
-      await sql<Reminder>`select * from reminders where user_id=${(res.locals.user as Profile).id} order by created_at desc,id desc limit ${page.limit + 1} offset ${page.offset}`.execute(
+      await sql<Reminder>`select * from reminders where user_id=${(res.locals.user as Profile).id} and ${page.view === "archive" ? sql`archived_at is not null` : sql`archived_at is null`} order by ${page.view === "archive" ? sql`archived_at` : sql`created_at`} desc,id desc limit ${page.limit + 1} offset ${page.offset}`.execute(
         db,
       );
     res.json({
@@ -160,7 +162,7 @@ export function reminderRouter(db: Kysely<Database>, mode = "mock_only") {
     const worker = await sql<{
       healthy: boolean;
       last_seen_at: string | null;
-    }>`select coalesce(max(last_seen_at)>now()-interval '90 seconds',false) as healthy,max(last_seen_at) as last_seen_at from worker_heartbeats`.execute(
+    }>`select coalesce(max(last_seen_at)>now()-interval '90 seconds',false) as healthy,max(last_seen_at) as last_seen_at from worker_heartbeats where mode=${mode}`.execute(
       db,
     );
     const notifications = (

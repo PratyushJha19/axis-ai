@@ -8,6 +8,8 @@ import { createLogger } from "../../../packages/observability/src/index.js";
 import { ReminderEngine, workerPolicy } from "./engine.js";
 import { mockProvider } from "./provider.js";
 import { DeliveryEngine, outboxProvider } from "./delivery.js";
+import { TelegramPoller } from "./telegram-poller.js";
+import { purgeArchivedReminders } from "./reminder-retention.js";
 import {
   messagingConfig,
   channelAdapters,
@@ -24,12 +26,21 @@ try {
   try {
     const engine = new ReminderEngine(
       db,
-      messagingConfig().mode === "live" ? outboxProvider(db) : mockProvider(db),
+      messagingConfig().mode === "live"
+        ? outboxProvider(db, () => new Date(), "telegram")
+        : mockProvider(db),
       logger,
       () => new Date(),
       workerPolicy(),
     );
     const messaging = messagingConfig();
+    // Historical WhatsApp records remain inspectable, but this runtime cannot send via Twilio.
+    messaging.twilio = undefined;
+    const poller =
+      messaging.mode === "live" && messaging.telegram
+        ? new TelegramPoller(db, messaging.telegram)
+        : undefined;
+    let pollHealthy: boolean | undefined;
     const delivery =
       messaging.mode === "live"
         ? new DeliveryEngine(
@@ -42,11 +53,30 @@ try {
         : undefined;
     logger.info({ event: "worker_started", mode: messaging.mode });
     let ready: boolean | undefined;
+    let nextRetention = 0;
     while (!controller.signal.aborted) {
       try {
         await checkDatabase(db);
+        if (poller) {
+          try {
+            if (await poller.runOnce()) {
+              if (pollHealthy !== true)
+                logger.info({ event: "telegram_poll_ready" });
+              pollHealthy = true;
+            }
+          } catch {
+            if (pollHealthy !== false)
+              logger.warn({ event: "telegram_poll_unavailable" });
+            pollHealthy = false;
+          }
+        }
         await engine.runOnce();
         await delivery?.runOnce();
+        if (Date.now() >= nextRetention) {
+          const count = await purgeArchivedReminders(db);
+          if (count) logger.info({ event: "reminder_archive_cleanup", count });
+          nextRetention = Date.now() + 60000;
+        }
         if (ready !== true)
           logger.info({
             event: "worker_dependency_ready",

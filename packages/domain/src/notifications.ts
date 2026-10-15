@@ -24,7 +24,7 @@ export async function notificationSettings(db: NotificationDB, userId: string) {
     db,
   );
   return (
-    await sql<NotificationSettings>`select whatsapp_destination,whatsapp_verified_at,whatsapp_window_until,whatsapp_enabled,email_destination,email_enabled,fallback_enabled,fallback_after_seconds,revision from notification_preferences where user_id=${userId}`.execute(
+    await sql<NotificationSettings>`select telegram_destination,telegram_bot_id,telegram_verified_at,telegram_enabled,whatsapp_destination,whatsapp_verified_at,whatsapp_window_until,whatsapp_enabled,email_destination,email_enabled,fallback_enabled,fallback_after_seconds,revision from notification_preferences where user_id=${userId}`.execute(
       db,
     )
   ).rows[0]!;
@@ -73,13 +73,19 @@ export async function saveNotificationSettings(
         422,
         "Link your WhatsApp number first.",
       );
+    if (value.telegram_enabled && !previous.telegram_verified_at)
+      throw new DomainError(
+        "VERIFICATION_REQUIRED",
+        422,
+        "Link Telegram first.",
+      );
     if (value.email_enabled && !owner.email_verified_at)
       throw new DomainError(
         "VERIFICATION_REQUIRED",
         422,
         "Sign out and sign in with Google again to verify your email.",
       );
-    await sql`update notification_preferences set whatsapp_enabled=${value.whatsapp_enabled},email_enabled=${value.email_enabled},email_destination=${value.email_enabled ? owner.email : null},fallback_enabled=${value.fallback_enabled},fallback_after_seconds=${value.fallback_after_seconds},revision=${randomUUID()},updated_at=now() where user_id=${userId}`.execute(
+    await sql`update notification_preferences set telegram_enabled=${value.telegram_enabled},whatsapp_enabled=${value.whatsapp_enabled},email_enabled=${value.email_enabled},email_destination=${value.email_enabled ? owner.email : null},fallback_enabled=${value.fallback_enabled},fallback_after_seconds=${value.fallback_after_seconds},revision=${randomUUID()},updated_at=now() where user_id=${userId}`.execute(
       trx,
     );
     await audit(trx, userId, "notification_consent_updated", null, correlation);
@@ -213,17 +219,21 @@ export async function enqueueDelivery(
   fallbackOf?: string,
 ) {
   const destination =
-    channel === "whatsapp"
-      ? settings.whatsapp_destination
-      : settings.email_destination;
+    channel === "telegram"
+      ? settings.telegram_destination
+      : channel === "whatsapp"
+        ? settings.whatsapp_destination
+        : settings.email_destination;
   const id = randomUUID();
   const enabled =
-    channel === "whatsapp"
-      ? settings.whatsapp_enabled && !!settings.whatsapp_verified_at
-      : settings.email_enabled && !!destination;
+    channel === "telegram"
+      ? settings.telegram_enabled && !!settings.telegram_verified_at
+      : channel === "whatsapp"
+        ? settings.whatsapp_enabled && !!settings.whatsapp_verified_at
+        : settings.email_enabled && !!destination;
   const result =
-    await sql<DeliveryJob>`insert into notification_jobs(id,user_id,reminder_id,occurrence,logical_key,channel,provider,kind,destination,preference_revision,status,fallback_of,next_attempt_at,attention,error_category,created_at,updated_at)
-    values (${id},${owner},${reminder?.id || null},${reminder?.occurrence || null},${key},${channel},${channel === "whatsapp" ? "twilio" : "resend"},${reminder ? "reminder" : "test"},${destination},${settings.revision},${enabled ? "queued" : "blocked"},${fallbackOf || null},${enabled ? now : null},${!enabled},${enabled ? null : "channel_not_configured"},${now},${now}) on conflict(logical_key,channel) do nothing returning *`.execute(
+    await sql<DeliveryJob>`insert into notification_jobs(id,user_id,reminder_id,occurrence,logical_key,channel,provider,kind,destination,preference_revision,status,fallback_of,next_attempt_at,attention,error_category,created_at,updated_at,telegram_bot_id)
+    values (${id},${owner},${reminder?.id || null},${reminder?.occurrence || null},${key},${channel},${channel === "telegram" ? "telegram" : channel === "whatsapp" ? "twilio" : "resend"},${reminder ? "reminder" : "test"},${destination},${settings.revision},${enabled ? "queued" : "blocked"},${fallbackOf || null},${enabled ? now : null},${!enabled},${enabled ? null : "channel_not_configured"},${now},${now},${channel === "telegram" ? settings.telegram_bot_id : null}) on conflict(logical_key,channel) do nothing returning *`.execute(
       db,
     );
   return (
@@ -242,6 +252,7 @@ export async function enqueueReminder(
   occurrence: number,
   key: string,
   now: Date,
+  primaryChannel: "whatsapp" | "telegram" = "whatsapp",
 ) {
   return db.transaction().execute(async (trx) => {
     await sql`select id from users where id=${owner} for update`.execute(trx);
@@ -261,12 +272,16 @@ export async function enqueueReminder(
       trx,
       owner,
       key,
-      "whatsapp",
+      primaryChannel,
       settings,
       now,
       reminder,
     );
-    if (!settings.whatsapp_enabled)
+    if (
+      !(primaryChannel === "telegram"
+        ? settings.telegram_enabled
+        : settings.whatsapp_enabled)
+    )
       await sql`update notification_jobs set fallback_deadline_at=${now} where id=${primary.id}`.execute(
         trx,
       );
@@ -298,9 +313,11 @@ export async function testNotification(
     }
     const settings = await notificationSettings(trx, owner);
     if (
-      !(channel === "whatsapp"
-        ? settings.whatsapp_enabled
-        : settings.email_enabled)
+      !(channel === "telegram"
+        ? settings.telegram_enabled
+        : channel === "whatsapp"
+          ? settings.whatsapp_enabled
+          : settings.email_enabled)
     )
       throw new DomainError(
         "VERIFICATION_REQUIRED",
@@ -350,7 +367,7 @@ export async function applyDeliveryResult(
   const status = advanceStatus(job.status, result.status);
   const changed =
     status !== job.status || (!job.provider_message_id && result.messageId);
-  await sql`update notification_jobs set status=${status},provider_message_id=coalesce(provider_message_id,${result.messageId || null}),updated_at=${now},accepted_at=case when ${["accepted", "sent", "delivered", "read"].includes(status)} then coalesce(accepted_at,${now}) else accepted_at end,delivered_at=case when ${confirmed(status)} then coalesce(delivered_at,${now}) else delivered_at end,error_category=${confirmed(status) ? null : result.category || (status === "failed" || status === "undelivered" ? "permanent" : null)},attention=${terminal(status) && !confirmed(status)},next_attempt_at=case when ${terminal(status)} then null else next_attempt_at end where id=${job.id}`.execute(
+  await sql`update notification_jobs set status=${status},provider_message_id=coalesce(provider_message_id,${result.messageId || null}),updated_at=${now},accepted_at=case when ${["accepted", "sent", "delivered", "read"].includes(status)} then coalesce(accepted_at,${now}) else accepted_at end,delivered_at=case when ${confirmed(status)} then coalesce(delivered_at,${now}) else delivered_at end,error_category=${confirmed(status) ? null : result.category || job.error_category || (status === "failed" || status === "undelivered" ? "permanent" : null)},attention=${(terminal(status) || job.attention) && !confirmed(status)},next_attempt_at=case when ${terminal(status)} then null else next_attempt_at end where id=${job.id}`.execute(
     db,
   );
   if (changed) await wakeReminder(db, job, now);
@@ -358,7 +375,7 @@ export async function applyDeliveryResult(
 }
 export async function deliveryWebhook(
   db: Kysely<Database>,
-  provider: "twilio" | "resend",
+  provider: "twilio" | "resend" | "telegram",
   eventId: string,
   messageId: string,
   result: DeliveryResult,

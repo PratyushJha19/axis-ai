@@ -1,10 +1,29 @@
 # AXIS — Documentation Pack
 
 **Version:** 1.0  
-**Status:** Multi-user Google sign-in implemented; each account has private records and BYOK settings. Live two-account Google and Groq acceptance remain pending. See `docs/multi-user-results.md`, `docs/m1-5-results.md` and `docs/m2-results.md` for evidence and limitations. Full MVP release gates remain open.  
+**Status:** M3 notification adapters, verified channel settings and durable fallback are implemented; verification results are recorded in `docs/m3-results.md`. Delivery defaults to simulation. Live WhatsApp/email, two-account Google and Groq acceptance remain pending. Full MVP release gates remain open.  
 **Purpose:** Give a coding agent a single, coherent source of truth for building AXIS in controlled, testable milestones.
 
 ## Start here
+
+**Reminder archive:** Finished and cancelled reminders now leave Active and remain
+in Archive for seven days before worker cleanup. Stop API/worker and restart via
+`npm run dev` to apply migration 008, then restart the worker. See
+[archive and retention](docs/reminder-archive.md).
+
+**Chat creation:** Ask AXIS to create a task or remind you at a given time, then
+review and confirm the card to save it. See [chat actions](docs/chat-actions.md).
+Stop API/worker before upgrading; the next `npm run dev` applies migration 007.
+
+For complete first-time installation and everyday startup instructions, read
+[the full setup and run guide](setup_guide.md), including Google, Groq, Telegram,
+optional email, separate frontend development and troubleshooting.
+
+**Telegram update (2026-10-15):** New live reminders use Telegram instead of
+Twilio/WhatsApp. Follow [Telegram setup](docs/telegram-setup.md). No tunnel or
+public URL is required for Telegram-only use. Migration 006 preserves history
+and requires new Telegram linking/consent; email fallback is optional and off.
+See [verification results](docs/telegram-results.md). Default mode remains mock.
 
 For this Windows workspace, run `npm run setup:google` after creating your Google
 OAuth client, then `npm run dev`. Open **http://localhost:3000**. See
@@ -12,6 +31,13 @@ OAuth client, then `npm run dev`. Open **http://localhost:3000**. See
 setup guidance and denies private access. For M2 reminders, run `npm run dev:worker`
 in a second terminal. Delivery is simulated; no real messages or external actions occur.
 See [M2 startup, configuration and API](docs/m2-operations.md).
+
+M3 adds **Notifications** for verified personal channels and delivery history. See
+[M3 setup and delivery policy](docs/11-m3-messaging-notifications.md) before changing
+`NOTIFICATION_MODE` from `mock`. Run `npm run dev:worker` independently of the API.
+No real messages are sent by default. Migration 005 requires an existing user to
+sign in again before enabling email notifications. Stop after M3 for review; M4
+approval execution is not implemented by this change.
 
 Any verified Google account can now sign in and create a separate private workspace. Existing records stay with their original account. `OWNER_EMAIL` is no longer required or used. Google OAuth audience restrictions still apply. Each user enters their own Groq key in AI Settings. Use separate browser profiles/private windows to test two users; no deployment is included.
 
@@ -23,24 +49,24 @@ For local development see [the runbook](docs/runbook.md), [M0 scope and open dec
 2. Read `docs/00-master-context.md`.
 3. Read `docs/01-product-requirements.md` and `docs/02-technical-architecture.md`.
 4. Read the remaining specifications before implementing the corresponding milestone.
-5. Continue one verified milestone at a time. M1.5 is the current slice; stop for review before M3. Do not build the whole product in one pass.
+5. Continue one verified milestone at a time. M3 is the current slice; stop for review before M4. Do not build the whole product in one pass.
 
 ## Document index
 
-| File | Purpose |
-|---|---|
-| `AGENTS.md` | Mandatory operating rules for the coding agent |
-| `docs/00-master-context.md` | Canonical product context, goals, principles, and decisions |
-| `docs/01-product-requirements.md` | User stories, scope, requirements, acceptance criteria |
-| `docs/02-technical-architecture.md` | Architecture, stack, boundaries, deployment assumptions |
-| `docs/03-database-and-memory.md` | Data model, memory semantics, migrations, retention |
-| `docs/04-security-and-approvals.md` | Authorization, approvals, secrets, audit, privacy |
-| `docs/05-reminders-and-reliability.md` | Scheduler, delivery state machine, retries, fallback |
-| `docs/06-api-and-integrations.md` | API conventions, contracts, integration behavior |
-| `docs/07-ui-ux-specification.md` | Screens, interaction rules, responsive behavior |
-| `docs/08-implementation-roadmap.md` | Milestones and dependency order |
-| `docs/09-test-plan-and-acceptance.md` | Test strategy and release gates |
-| `docs/decisions/architecture-decisions.md` | Decisions made and decisions intentionally left open |
+| File                                       | Purpose                                                     |
+| ------------------------------------------ | ----------------------------------------------------------- |
+| `AGENTS.md`                                | Mandatory operating rules for the coding agent              |
+| `docs/00-master-context.md`                | Canonical product context, goals, principles, and decisions |
+| `docs/01-product-requirements.md`          | User stories, scope, requirements, acceptance criteria      |
+| `docs/02-technical-architecture.md`        | Architecture, stack, boundaries, deployment assumptions     |
+| `docs/03-database-and-memory.md`           | Data model, memory semantics, migrations, retention         |
+| `docs/04-security-and-approvals.md`        | Authorization, approvals, secrets, audit, privacy           |
+| `docs/05-reminders-and-reliability.md`     | Scheduler, delivery state machine, retries, fallback        |
+| `docs/06-api-and-integrations.md`          | API conventions, contracts, integration behavior            |
+| `docs/07-ui-ux-specification.md`           | Screens, interaction rules, responsive behavior             |
+| `docs/08-implementation-roadmap.md`        | Milestones and dependency order                             |
+| `docs/09-test-plan-and-acceptance.md`      | Test strategy and release gates                             |
+| `docs/decisions/architecture-decisions.md` | Decisions made and decisions intentionally left open        |
 
 ## Important status labels
 

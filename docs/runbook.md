@@ -1,9 +1,26 @@
 # Local AXIS runbook
 
+Current schema: **6**, including Telegram migration 006. Stop API/worker before
+upgrade, then use `npm run dev` and `npm run dev:worker`. Current notification
+instructions: [Telegram setup](telegram-setup.md). Older WhatsApp and schema-4
+notes below are historical; active WhatsApp dispatch is disabled. Telegram-only
+mode needs no public URL; Resend email remains optional with separate setup.
+
 Prerequisites: Node 24, npm 11, PostgreSQL 18. No Docker required. Google
 sign-in needs an owner-configured OAuth client; see google-sign-in.md.
 The Windows npm launchers use built-in Windows PowerShell; no PowerShell 7 install is required.
 Run commands from repository root. Dependencies: `npm ci`.
+
+## M3 notification delivery
+
+Default mode remains simulation. Run `npm run dev` and, separately,
+`npm run dev:worker`. See [M3 configuration, consent and recovery](11-m3-messaging-notifications.md)
+for Twilio Sandbox, Resend and signed callback setup. Both processes need the same
+mode and server-only configuration. No model credentials are required by the worker.
+Migration 005 adds explicit email verification evidence; sign out/in before enabling
+email. Never reset an uncertain delivery to queued: inspect history and use the
+bounded provider-status check when a reference is available. Live provider tests
+require consenting recipients and remain pending until documented as executed.
 
 ## M1 quick start
 

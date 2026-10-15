@@ -109,6 +109,7 @@ export function createApp(dependencies: {
       aiRouter(
         new AIService(dependencies.db, dependencies.ai),
         dependencies.logger,
+        dependencies.db,
       ),
       productRouter(
         dependencies.db,

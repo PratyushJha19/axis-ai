@@ -1,5 +1,9 @@
 # M1.5 — AI provider foundation (BYOK)
 
+**2026-10-15 extension:** [Chat actions](chat-actions.md) and ADR-021 supersede the
+read-only restriction below only for explicitly confirmed task/reminder creation.
+No generic tools, memory writes or external executor are enabled.
+
 Status: implementation and automated acceptance passed; actual-provider acceptance pending. M1.5 is not yet marked fully complete.
 
 Subsequent multi-user milestone (2026-10-12): verified Google signup is now supported. References below to deferred onboarding describe the original M1.5 boundary and are superseded by ADR-017 and `multi-user-results.md`. BYOK remains isolated per user.
@@ -12,7 +16,7 @@ Acceptance requires encrypted per-owner configuration, real adapter requests, se
 
 ## Decisions
 
-One active configuration per owner. Groq is the initial adapter, with maintained models `llama-3.1-8b-instant` and `llama-3.3-70b-versatile`. NVIDIA remains pending a separately verified implementation. Fixed Groq HTTPS endpoint, redirects forbidden; no custom URLs or tools. Model availability and account entitlement must be checked through Test connection.
+One active configuration per owner. Groq is the initial adapter. As of ADR-020, AI Settings loads the current catalog with the user's entered or saved key through `POST /ai/models`. Valid text-chat model IDs can also be entered manually; there is no static model whitelist. Known audio models and autonomous agent systems are excluded from text chat. NVIDIA remains pending a separately verified implementation. Fixed Groq HTTPS endpoints, redirects forbidden; no custom URLs or tools. Catalog membership does not guarantee account entitlement; Test connection verifies inference separately with consent and at most 1,024 output tokens (or the lower configured server limit).
 
 Missing master key disables AI only, returning a clear configuration error. Invalid supplied configuration fails API startup. This reconciles fail-closed credential handling with the requirement that the app remain useful without AI. The reminder worker never loads AI configuration. Production onboarding remains single owner; isolation tests use synthetic distinct users.
 
@@ -74,7 +78,7 @@ All routes use `/api/v1`, current authenticated owner, no-store responses, exist
 
 | Method and route            | Contract                                                                                                                                                                                                                                                                   |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /ai/providers`         | Enabled flag, implemented provider and maintained model registry.                                                                                                                                                                                                          |
+| `GET /ai/providers`         | Enabled flag and implemented provider metadata; POST /ai/models loads the current catalog.                                                                                                                                                                                 |
 | `GET /ai/config`            | `{config}` safe metadata or null; never ciphertext or key.                                                                                                                                                                                                                 |
 | `PUT /ai/config`            | `{provider,model,apiKey?}`; omitted key retains existing provider key. Replacement/model change resets validation.                                                                                                                                                         |
 | `DELETE /ai/config`         | Delete owner's configuration; 204.                                                                                                                                                                                                                                         |
@@ -88,7 +92,7 @@ Config metadata includes provider/model, revision, key-configured flag, validati
 
 ## Manual actual-provider acceptance (pending)
 
-1. Sign in as the configured Google owner. Open AI Settings, select Groq and an allowlisted model, and enter your personal key in the password field.
+1. Sign in with Google. Open AI Settings, enter your personal key, click **Load Groq models**, and select or type a text model ID. A saved key can also load the catalog. Catalog lookup does not generate a completion or save an entered key.
 2. Consent to the tiny test call, click Test entered key, and verify a successful actual-provider response. Save settings; verify the input clears. Click Test saved connection and verify success.
 3. Reload; confirm provider/model and status persist, and the key input stays empty. Inspect the configuration response only: it must contain no original key or ciphertext. Do not save network captures of the key submission.
 4. Open Chat, send a harmless question, and confirm an actual model answer. Reload, select the saved conversation, and continue it.

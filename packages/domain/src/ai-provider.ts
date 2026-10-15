@@ -4,12 +4,34 @@ export const providers = [
   {
     id: "groq",
     name: "Groq",
-    models: ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"],
+    models: [],
   },
 ] as const;
+export const modelId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/)
+  .refine((v) => !v.includes("://") && !v.includes(".."));
+export function modelRestriction(id: string): string | null {
+  if (
+    /^(whisper-|distil-whisper-|playai-tts|canopylabs\/orpheus|.*\/.*tts)/i.test(
+      id,
+    )
+  )
+    return "Audio model — this interface supports text chat only.";
+  if (/^(groq\/compound|compound-)/i.test(id))
+    return "Agent system — built-in external tools are not enabled in AXIS.";
+  return null;
+}
+export type GroqModel = { id: string; restriction: string | null };
 export const selection = z.object({
   provider: z.literal("groq"),
-  model: z.enum(providers[0].models),
+  model: modelId.refine(
+    (id) => !modelRestriction(id),
+    "Choose a text-chat model; audio and autonomous agent systems are not supported.",
+  ),
 });
 export type Selection = z.infer<typeof selection>;
 export type ChatMessage = {
@@ -21,6 +43,7 @@ export type Completion = {
   usage: { input: number; output: number } | null;
 };
 export interface AIAdapter {
+  listModels?(apiKey: string): Promise<GroqModel[]>;
   generate(
     config: Selection & { apiKey: string },
     messages: ChatMessage[],
@@ -39,7 +62,10 @@ export const errorMessages: Record<string, string> = {
   credentials: "The provider rejected this key. Replace it in AI Settings.",
   quota: "Provider quota is exhausted. Check your provider account.",
   rate_limit: "The provider is rate limiting requests. Wait before retrying.",
-  model: "The provider cannot serve this model. Check AI Settings.",
+  model:
+    "Groq cannot serve this model for your key. Load the current model list and check your Groq project model permissions; the model may be retired or restricted.",
+  output_limit:
+    "The model reached the output limit before producing a text answer. Increase the server AI output-token limit or choose another model.",
   rejected:
     "The provider rejected this request. Review its length and your settings.",
   outage:
@@ -90,6 +116,49 @@ export function groqAdapter(
   fetcher: typeof fetch = fetch,
 ): AIAdapter {
   return {
+    async listModels(apiKey) {
+      const signal = AbortSignal.timeout(timeoutMs);
+      try {
+        const response = await fetcher(
+          "https://api.groq.com/openai/v1/models",
+          {
+            method: "GET",
+            redirect: "error",
+            signal,
+            headers: { Authorization: `Bearer ${apiKey}` },
+          },
+        );
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new AIError(
+            response.status === 401 || response.status === 403
+              ? "credentials"
+              : response.status === 429
+                ? "rate_limit"
+                : "outage",
+          );
+        }
+        const catalog = z
+          .object({
+            data: z
+              .array(z.object({ id: modelId, active: z.boolean().optional() }))
+              .max(1000),
+          })
+          .parse(JSON.parse(await boundedBody(response, 256000)));
+        return [
+          ...new Set(
+            catalog.data
+              .filter((m) => m.active !== false && !m.id.includes(apiKey))
+              .map((m) => m.id),
+          ),
+        ]
+          .sort()
+          .map((id) => ({ id, restriction: modelRestriction(id) }));
+      } catch (error) {
+        if (error instanceof AIError) throw error;
+        throw new AIError(signal.aborted ? "timeout" : "malformed");
+      }
+    },
     async generate(config, messages, maxTokens = 1024) {
       selection.parse(config);
       const signal = AbortSignal.timeout(timeoutMs);
@@ -109,6 +178,9 @@ export function groqAdapter(
               messages,
               stream: false,
               max_completion_tokens: maxTokens,
+              ...(/^openai\/gpt-oss-(20b|120b)$/.test(config.model)
+                ? { reasoning_effort: "low" }
+                : {}),
             }),
           },
         );
@@ -129,6 +201,16 @@ export function groqAdapter(
           try {
             const body = JSON.parse(await boundedBody(response, 8192));
             if (
+              [
+                "model_not_found",
+                "model_decommissioned",
+                "model_not_available",
+                "model_permission_blocked",
+                "model_not_allowed",
+              ].includes(body?.error?.code)
+            )
+              code = "model";
+            if (
               [body?.error?.code, body?.error?.type].some((value) =>
                 [
                   "insufficient_quota",
@@ -148,6 +230,16 @@ export function groqAdapter(
         }
         // Bound response bytes before parsing, including a dishonest Content-Length.
         const body = await boundedBody(response, 128000);
+        try {
+          const parsed = JSON.parse(body);
+          if (
+            parsed?.choices?.[0]?.finish_reason === "length" &&
+            !parsed.choices[0].message?.content
+          )
+            throw new AIError("output_limit");
+        } catch (error) {
+          if (error instanceof AIError) throw error;
+        }
         let value: z.infer<typeof reply>;
         try {
           value = reply.parse(JSON.parse(body));

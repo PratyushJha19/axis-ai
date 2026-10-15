@@ -15,6 +15,9 @@ import { reminderScenarios } from "./reminder-scenarios.js";
 import { aiScenarios } from "./ai-scenarios.js";
 import { multiUserScenarios } from "./multi-user-scenarios.js";
 import { notificationScenarios } from "./notification-scenarios.js";
+import { telegramScenarios } from "./telegram-scenarios.js";
+import { chatActionScenarios } from "./chat-action-scenarios.js";
+import { reminderRetentionScenarios } from "./reminder-retention-scenarios.js";
 
 test("empty PostgreSQL migrates, repeats safely, and persists across connection restart", async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
@@ -61,9 +64,43 @@ test("empty PostgreSQL migrates, repeats safely, and persists across connection 
     const m2 = await createMigrator(db).migrateTo("003-reminders");
     assert.equal(m2.error, undefined);
     assert.equal(m2.results?.length, 1);
+    const m3 = await createMigrator(db).migrateTo("005-notifications");
+    assert.equal(m3.error, undefined);
+    const legacyJob = randomUUID(),
+      legacyRevision = randomUUID();
+    await sql`insert into notification_preferences(user_id,whatsapp_destination,whatsapp_verified_at,whatsapp_enabled,revision) values (${upgradeUser},'+15005550006',now(),true,${legacyRevision})`.execute(
+      db,
+    );
+    await sql`insert into notification_jobs(id,user_id,logical_key,channel,provider,kind,destination,preference_revision,next_attempt_at) values (${legacyJob},${upgradeUser},${`upgrade:${legacyJob}`},'whatsapp','twilio','test','+15005550006',${legacyRevision},now())`.execute(
+      db,
+    );
     const first = await createMigrator(db).migrateToLatest();
     assert.equal(first.error, undefined);
-    assert.equal(first.results?.length, 2);
+    assert.equal(first.results?.length, 3);
+    const legacy = (
+      await sql<{
+        status: string;
+        next_attempt_at: string | null;
+      }>`select status,next_attempt_at from notification_jobs where id=${legacyJob}`.execute(
+        db,
+      )
+    ).rows[0]!;
+    assert.equal(legacy.status, "blocked");
+    assert.equal(legacy.next_attempt_at, null);
+    const preferences = (
+      await sql<{
+        whatsapp_enabled: boolean;
+        telegram_enabled: boolean;
+        fallback_enabled: boolean;
+      }>`select whatsapp_enabled,telegram_enabled,fallback_enabled from notification_preferences where user_id=${upgradeUser}`.execute(
+        db,
+      )
+    ).rows[0]!;
+    assert.deepEqual(preferences, {
+      whatsapp_enabled: false,
+      telegram_enabled: false,
+      fallback_enabled: false,
+    });
     assert.equal(
       (
         await sql<{
@@ -85,7 +122,10 @@ test("empty PostgreSQL migrates, repeats safely, and persists across connection 
     await multiUserScenarios(t, db, connectionString);
     await reminderScenarios(t, db, connectionString);
     await aiScenarios(t, db, connectionString);
+    await chatActionScenarios(t, db, connectionString);
     await notificationScenarios(t, db, connectionString);
+    await telegramScenarios(t, db);
+    await reminderRetentionScenarios(t, db);
   } finally {
     await db.destroy();
   }

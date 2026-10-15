@@ -74,7 +74,46 @@ test("owner previews, saves, edits, snoozes and cancels a persisted reminder", a
   await reminder
     .getByRole("button", { name: "Cancel reminder", exact: true })
     .click();
+  await expect(reminder).toHaveCount(0);
+  await page
+    .getByRole("combobox", { name: "Reminder view", exact: true })
+    .selectOption("archive");
   await expect(reminder).toContainText("cancelled");
+  // Synthetic settled Telegram response: no live delivery is performed.
+  await page.route(/\/api\/v1\/reminders\?/, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.items = body.items.map((row: { title: string }) =>
+      row.title === "Synthetic future reminder"
+        ? {
+            ...row,
+            status: "sent",
+            reason: "telegram_sent",
+            recurrence: "none",
+            next_attempt_at: null,
+            attention: false,
+            channel_policy: "whatsapp_email",
+          }
+        : row,
+    );
+    await route.fulfill({ response, json: body });
+  });
+  await page
+    .getByRole("button", { name: "Refresh reminders", exact: true })
+    .click();
+  await expect(reminder).toContainText(
+    "There are no future occurrences to cancel",
+  );
+  await expect(
+    reminder.getByRole("button", { name: "Cancel reminder", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    reminder.getByRole("button", { name: "Snooze", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    reminder.getByRole("button", { name: "Edit / reschedule", exact: true }),
+  ).toHaveCount(0);
+  await expect(reminder).not.toContainText("WhatsApp");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(reminder).toBeVisible();
   expect(
@@ -97,6 +136,11 @@ test("owner previews, saves, edits, snoozes and cancels a persisted reminder", a
 test("dashboard displays persisted mock delivery and attempt receipt from independent worker", async ({
   page,
 }) => {
+  const rejected: string[] = [];
+  page.on("response", (response) => {
+    if (response.status() === 429)
+      rejected.push(new URL(response.url()).pathname);
+  });
   await page.goto("/");
   await page.getByRole("link", { name: "Continue with Google" }).click();
   await page
@@ -122,15 +166,28 @@ test("dashboard displays persisted mock delivery and attempt receipt from indepe
     name: "Reminder Synthetic worker delivery",
     exact: true,
   });
+  await page
+    .getByRole("combobox", { name: "Reminder view", exact: true })
+    .selectOption("archive");
   await expect
     .poll(async () => {
       await page.getByRole("button", { name: "Refresh reminders" }).click();
-      return reminder.textContent();
+      expect(
+        rejected,
+        "Browser workflow must stay within the real API request limit",
+      ).toEqual([]);
+      return (await reminder.count()) ? reminder.textContent() : "waiting";
     })
     .toContain("delivered (simulated)");
+  const attemptsResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/attempts") &&
+      response.request().method() === "GET",
+  );
   await reminder
     .getByRole("button", { name: "View / refresh delivery attempts" })
     .click();
+  expect((await attemptsResponse).status()).toBe(200);
   await expect(reminder).toContainText("Mock receipt");
   await expect(reminder).toContainText("delivered (mock)");
 });

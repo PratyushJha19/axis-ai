@@ -55,6 +55,7 @@ export const preferenceSchema = z
 export type ReminderInput = z.infer<typeof reminderSchema>;
 export type Preferences = z.infer<typeof preferenceSchema>;
 export interface Reminder {
+  archived_at: string | null;
   id: string;
   user_id: string;
   title: string;
@@ -92,6 +93,20 @@ export interface Reminder {
   cancelled_at: string | null;
   created_at: string;
   updated_at: string;
+}
+export function isSettledTelegramReminder(
+  row: Pick<
+    Reminder,
+    "status" | "reason" | "recurrence" | "next_attempt_at" | "attention"
+  >,
+) {
+  return (
+    row.status === "sent" &&
+    row.reason === "telegram_sent" &&
+    row.recurrence === "none" &&
+    row.next_attempt_at === null &&
+    !row.attention
+  );
 }
 export interface Attempt {
   id: string;
