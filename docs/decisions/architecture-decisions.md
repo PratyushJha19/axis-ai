@@ -221,6 +221,66 @@ Record material choices here. Do not silently replace decisions.
 - **Consequences:** Worker availability determines when eligible deletion happens. Recurrence with future work and unresolved reminders remain active. Archive has no restore/resend control. Schema readiness becomes 8.
 - **Validation:** `../reminder-archive.md` records database, security and browser evidence. This supersedes indefinite reminder-detail history retention for settled/cancelled reminders only.
 
+### ADR-023 — Shared internal approval gate with external operations denied
+
+- **Status:** Accepted limited implementation under the owner's instruction to
+  proceed with the available M4 specification, 2026-10-17.
+- **Decision:** Extend the existing chat proposal table and gate rather than
+  introduce a parallel approval authority. Keep 24-hour immutable expiry,
+  owner-scoped idempotency, a server policy version and a canonical database
+  SHA-256 security-context digest. Internal task/reminder creation requires
+  explicit approval and commits its effect, execution evidence and audit together.
+- **Compatibility:** Keep database/chat `succeeded`; expose `executed` through the
+  new approval API. Preserve old proposal IDs, payload hashes and chat history.
+  Direct authenticated internal CRUD and consented reminder delivery retain their
+  existing exceptions. No provider SDK or infrastructure is added.
+- **Boundary:** Unknown, external and high-risk actions are denied. A login's
+  session expiry is not fresh authentication. The high-risk taxonomy and freshness
+  window remain unresolved; no fresh-auth challenge or external executor is
+  claimed. Notifications for approvals are dashboard-only.
+- **Consequences:** Approval and execution are separate inbox controls; existing
+  chat confirmation uses the same gate in one transaction. Failed local writes
+  roll back and require a new proposal. No blind retry of unknown outcomes.
+  Future network handlers require an explicit durable outbox/reconciliation
+  design and high-risk authentication policy before registration.
+- **Evidence:** `../12-m4-approval-security-gate.md`.
+
+### ADR-024 — Durable internal agent runs over BYOK text completions
+
+- **Status:** Accepted implementation of the owner's M4.5 request, 2026-10-18.
+- **Decision:** Migration 010 persists owner-scoped runs/tool history. Use strict
+  JSON decisions through the existing text adapter and a server tool registry.
+  Run bounded inference separately from reminder delivery.
+- **Authority:** Internal reads are scoped; task/reminder proposals reuse M4.
+  Commit proposal association atomically; resume only from execution evidence.
+- **Recovery:** Fence leases and late results. Resume saved decisions, but mark
+  interrupted inference unknown without blind resends. Separate model prose from
+  actual outcomes in the UI.
+- **Boundary:** No external connector or high-risk policy is invented. Those
+  handlers remain unavailable until their account/permission contracts exist.
+- **Evidence:** `../13-m4-5-agent-runtime-tool-execution.md`, `../m4-5-results.md`.
+
+### ADR-025 — Deterministic planning with optional BYOK advice and consented alerts
+
+- **Status:** Accepted engineering design under the owner's M5 specification, 2026-10-19.
+- **Decision:** Add migration 011 for versioned preferences/plans, AI generation
+  receipts, feedback and durable alert identities. Reuse tasks, projects, memory,
+  reminders, audit and the existing worker; no separate scheduler or model loop.
+- **Policy:** Availability is empty until supplied; Monday is the configurable
+  week start. Estimates are never invented. Accepting a plan reserves internal
+  capacity only. Explicit recovery previews and atomically applies task/reminder
+  edits through existing domain services under the ADR-023 internal CRUD exception.
+- **Authority:** AI advice has validated owner task IDs and no write authority.
+  M4.5 gains read tools only; protected creation still requires M4. Calendar and
+  other unavailable sources are disclosed, not simulated.
+- **Notifications:** Disabled by default, configurable timing, five new personal
+  events per local day. Unique event identity plus existing M2/M3 consent/dispatch
+  fences prevents repeated queuing and suppresses stale queued source events.
+- **Tradeoffs:** Bounded data loads, indivisible time blocks, explicit stale-plan
+  rejection, optional AI with deterministic fallback. No automatic AI polling,
+  external connectors, deployment or historical analytics expansion.
+- **Evidence:** `../14-m5-daily-intelligence-planning.md`, `../m5-results.md`.
+
 ### ADR-XXX — Title
 
 - **Status:** Proposed / Accepted / Superseded

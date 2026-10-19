@@ -59,7 +59,7 @@ test("owner previews, saves, edits, snoozes and cancels a persisted reminder", a
   await page.getByLabel("New focus end").fill("2099-10-14T10:00");
   await page.getByRole("button", { name: "Save reminder preferences" }).click();
   await expect(
-    page.getByText("Reminder preferences saved.", { exact: true }),
+    page.getByText("Reminder preferences saved.", { exact: true }).first(),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Remove focus block" }),
@@ -151,7 +151,7 @@ test("dashboard displays persisted mock delivery and attempt receipt from indepe
   await page.getByLabel("Quiet hours end").fill("");
   await page.getByRole("button", { name: "Save reminder preferences" }).click();
   await expect(
-    page.getByText("Reminder preferences saved.", { exact: true }),
+    page.getByText("Reminder preferences saved.", { exact: true }).first(),
   ).toBeVisible();
   await page.getByRole("button", { name: "Add reminder", exact: true }).click();
   await page.getByLabel("Reminder title").fill("Synthetic worker delivery");

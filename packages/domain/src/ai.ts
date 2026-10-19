@@ -90,6 +90,30 @@ export class AIService {
   get enabled() {
     return Boolean(this.runtime);
   }
+  async agentCompletion(user: string, messages: ChatMessage[]) {
+    const runtime = this.active();
+    if (runtime.adapter.agentProtocol !== "json-text")
+      throw new DomainError(
+        "AGENT_CAPABILITY_UNSUPPORTED",
+        400,
+        "This adapter does not support the validated agent protocol.",
+      );
+    await this.rate(user, this.db);
+    const config = await this.config(user);
+    const apiKey = runtime.vault.decrypt(
+      config.encrypted_key,
+      user,
+      config.provider,
+    );
+    assertNoCredentials(JSON.stringify(messages), apiKey);
+    const completion = await runtime.adapter.generate(
+      { ...config, apiKey },
+      messages,
+      runtime.maxTokens,
+    );
+    assertNoCredentials(completion.content, apiKey);
+    return completion;
+  }
   private active() {
     if (!this.runtime)
       throw new DomainError(

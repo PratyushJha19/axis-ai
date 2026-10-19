@@ -144,7 +144,22 @@ Acceptance:
 - Audit events cover full lifecycle.
 - No live external action is enabled by default.
 
+## Milestone M4.5 — Agent runtime and tool execution
+
+Owner-requested intermediate milestone: durable bounded runs using existing BYOK,
+internal tools, M4-gated creation and Chat status. Keep inference independent of
+reminders. Acceptance covers validation, isolation, limits, recovery, cancellation,
+approval resumption and regressions. External connectors stay disabled. See
+`13-m4-5-agent-runtime-tool-execution.md` and `m4-5-results.md`.
+Stop for review before M5.
+
 ## Milestone M5 — Dashboard and daily experience
+
+**2026-10-19 implementation:** The owner's expanded M5 specification is recorded
+in `14-m5-daily-intelligence-planning.md`. It adds deterministic briefings/ranking,
+daily/weekly plans, explicit recovery, optional AI advice and consented proactive
+events. See `m5-results.md` for actual checks and limitations. Calendar, project
+deadlines and dependency graphs remain unavailable. Stop for review before M6.
 
 Goal: make the core system useful every day.
 

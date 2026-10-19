@@ -74,7 +74,9 @@ test("owner can capture, correct, archive and delete through the real dashboard"
     page.getByRole("heading", { name: "Welcome back, Alex." }),
   ).toBeVisible();
   await expect(
-    page.getByText("Write the portfolio story", { exact: true }),
+    page.getByRole("button", {
+      name: /^Write the portfolio story Personal website/,
+    }),
   ).toBeVisible();
   await page
     .getByRole("navigation")
@@ -131,9 +133,13 @@ test("owner can capture, correct, archive and delete through the real dashboard"
     .click();
   await page.setViewportSize({ width: 1440, height: 1050 });
   await expect(
-    page.getByText("Write the portfolio story", { exact: true }),
+    page.getByRole("button", {
+      name: /^Write the portfolio story Personal website/,
+    }),
   ).toBeVisible();
-  await expect(page.getByRole("status")).not.toBeVisible({ timeout: 7000 });
+  await expect(page.locator(".toast[role='status']")).not.toBeVisible({
+    timeout: 7000,
+  });
   await page.screenshot({
     path: ".local/dashboard-desktop.png",
     fullPage: true,

@@ -1,5 +1,15 @@
 # AXIS — API and Integration Contracts
 
+**M5 update:** Authenticated `/api/v1/intelligence/*`, `/planning-preferences` and
+`/plans/*` routes add grounded briefings, bounded advice, versioned plans and
+explicit recovery. Contracts and safety limits are in
+`14-m5-daily-intelligence-planning.md`. These do not authorize model-generated writes.
+
+**M4.5 update:** Authenticated `/api/v1/agent/runs` submit/list/detail and
+cancel/clarify routes reuse existing session, CSRF and owner checks. See the
+contracts in `13-m4-5-agent-runtime-tool-execution.md`. Internal write tools create
+M4 proposals; there is no arbitrary tool execution endpoint or external connector.
+
 **Version:** 1.0 | **Contract-first guidance; endpoint names are proposed**
 
 ## 1. API conventions

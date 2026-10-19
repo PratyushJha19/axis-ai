@@ -3,6 +3,9 @@ import {
   useEffect,
   useRef,
   useState,
+  lazy,
+  Suspense,
+  type ComponentProps,
   type FormEvent,
   type CSSProperties,
   type ReactNode,
@@ -44,6 +47,17 @@ import type { Reminder } from "../../../packages/shared/src/reminders";
 import { api, ApiError, setCsrf } from "./api";
 import { Reminders } from "./Reminders";
 import { AISettings, AIChat } from "./AI";
+import { Approvals } from "./Approvals";
+const LazyPlanning = lazy(() =>
+  import("./Planning").then((module) => ({ default: module.Planning })),
+);
+function Planning(props: ComponentProps<typeof LazyPlanning>) {
+  return (
+    <Suspense fallback={<p>Loading planning…</p>}>
+      <LazyPlanning {...props} />
+    </Suspense>
+  );
+}
 import { Notifications } from "./Notifications";
 import {
   burst,
@@ -57,16 +71,19 @@ import {
 
 type View =
   | "Overview"
+  | "Planning"
   | "Tasks"
   | "Projects"
   | "Memory"
   | "Reminders"
+  | "Approvals"
   | "Notifications"
   | "Settings"
   | "AI Settings"
   | "Chat";
 const labels: Record<View, string> = {
   Overview: "Today",
+  Planning: "Planning",
   Tasks: "Tasks",
   Projects: "Projects",
   Memory: "Memory",
@@ -74,9 +91,15 @@ const labels: Record<View, string> = {
   Chat: "Ask AXIS",
   Settings: "Profile",
   Notifications: "Alerts & channels",
+  Approvals: "Approvals",
   "AI Settings": "AI provider",
 };
-const settingsViews: View[] = ["Settings", "Notifications", "AI Settings"];
+const settingsViews: View[] = [
+  "Settings",
+  "Approvals",
+  "Notifications",
+  "AI Settings",
+];
 type Kind = "task" | "project" | "memory";
 type RecordItem = Task | Project | Memory;
 type EditorState = { kind: Kind; record?: RecordItem };
@@ -153,13 +176,17 @@ function Empty({
 }
 
 export function App() {
+  const [planningDirty, setPlanningDirty] = useState(false);
   const [user, setUser] = useState<Profile | null>(null),
     [boot, setBoot] = useState(true),
     [configured, setConfigured] = useState(false);
   const [view, setView] = useState<View>(
       new URLSearchParams(window.location.search).get("view") === "reminders"
         ? "Reminders"
-        : "Overview",
+        : new URLSearchParams(window.location.search).get("view") ===
+            "approvals"
+          ? "Approvals"
+          : "Overview",
     ),
     [mobile, setMobile] = useState(false),
     [editor, setEditor] = useState<EditorState | null>(null),
@@ -328,6 +355,8 @@ export function App() {
     };
   }, [user, view, refresh]);
   function navigate(next: View) {
+    if (planningDirty && !window.confirm("Discard unsaved plan edits?")) return;
+    setPlanningDirty(false);
     setView(next);
     setQuery("");
     setOffset(0);
@@ -546,6 +575,7 @@ export function App() {
           {(
             [
               [Sun, "Overview"],
+              [Clock3, "Planning"],
               [ListTodo, "Tasks"],
               [Folder, "Projects"],
               [Brain, "Memory"],
@@ -597,6 +627,7 @@ export function App() {
                 {(
                   [
                     [UserRound, "Settings"],
+                    [ShieldCheck, "Approvals"],
                     [Bell, "Notifications"],
                     [Cpu, "AI Settings"],
                   ] as const
@@ -695,7 +726,9 @@ export function App() {
                               ? "Choose how and where AXIS reaches you."
                               : view === "AI Settings"
                                 ? "Bring your own model and key."
-                                : "A workspace that works your way."}
+                                : view === "Approvals"
+                                  ? "Nothing happens until you say so."
+                                  : "A workspace that works your way."}
               </p>
             </div>
             {view !== "Overview" &&
@@ -703,7 +736,8 @@ export function App() {
               view !== "AI Settings" &&
               view !== "Settings" &&
               view !== "Reminders" &&
-              view !== "Notifications" && (
+              view !== "Notifications" &&
+              view !== "Approvals" && (
                 <button
                   className="secondary"
                   onClick={() =>
@@ -829,6 +863,21 @@ export function App() {
                     </button>
                   ))}
                 </div>
+                {user.timezone && (
+                  <Planning
+                    compact
+                    revision={refresh}
+                    onError={fail}
+                    onExpand={() => navigate("Planning")}
+                    onOpen={(kind, id) => {
+                      void api<Task | Project>(
+                        `/${kind === "task" ? "tasks" : "projects"}/${id}`,
+                      )
+                        .then((record) => setEditor({ kind, record }))
+                        .catch(fail);
+                    }}
+                  />
+                )}
                 <section className="panel overview-card">
                   <div className="section-title">
                     <h2>Up next</h2>
@@ -1189,6 +1238,21 @@ export function App() {
             </>
           )}
           {view === "Reminders" && <Reminders user={user} onError={fail} />}
+          {view === "Planning" && (
+            <Planning
+              revision={refresh}
+              onDirty={setPlanningDirty}
+              onError={fail}
+              onOpen={(kind, id) => {
+                void api<Task | Project>(
+                  `/${kind === "task" ? "tasks" : "projects"}/${id}`,
+                )
+                  .then((record) => setEditor({ kind, record }))
+                  .catch(fail);
+              }}
+            />
+          )}
+          {view === "Approvals" && <Approvals onError={fail} />}
           {view === "Notifications" && (
             <Notifications onError={fail} timezone={user.timezone} />
           )}

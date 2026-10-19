@@ -1,3 +1,5 @@
+import { AIService, type AIRuntime } from "../../packages/domain/src/ai.js";
+import { AgentRuntime } from "../../services/worker/src/agent-runtime.js";
 import { randomUUID, randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -58,68 +60,111 @@ const auth = createAuth(
   provider,
 );
 let rateFailureSent = false;
+const aiRuntime: AIRuntime = {
+  vault: new KeyVault(new Map([["test", randomBytes(32)]]), "test"),
+  rate: 20,
+  adapter: {
+    agentProtocol: "json-text",
+    async listModels() {
+      return [
+        { id: "openai/gpt-oss-20b", restriction: null },
+        {
+          id: "whisper-large-v3",
+          restriction: "Audio model — text chat only.",
+        },
+      ];
+    },
+    async generate(config, messages) {
+      if (config.apiKey === "synthetic-invalid-key")
+        throw new AIError("credentials");
+      if (messages[0]?.content.includes("Maximum four independent reads")) {
+        const done = messages.some((m) =>
+          m.content.startsWith("Verified M4 result"),
+        );
+        return {
+          content: JSON.stringify(
+            done
+              ? {
+                  kind: "final",
+                  message: "The recorded task result is available.",
+                }
+              : {
+                  kind: "tools",
+                  calls: [
+                    {
+                      name: "create_task",
+                      arguments: { title: "Agent browser task" },
+                    },
+                  ],
+                },
+          ),
+          usage: { input: 10, output: 10 },
+        };
+      }
+      const message = messages.at(-1)?.content;
+      if (message === "Create a task to read the report")
+        return {
+          content: JSON.stringify({
+            reply: "Draft",
+            proposal: {
+              kind: "task",
+              title: "Read the report",
+              description: "",
+            },
+          }),
+          usage: null,
+        };
+      if (message === "Remind me on October 16 2099 at 9 am")
+        return {
+          content: JSON.stringify({
+            reply: "Draft",
+            proposal: {
+              kind: "reminder",
+              title: "Review report",
+              local_due: "2099-10-16T09:00",
+              recurrence: "none",
+            },
+          }),
+          usage: null,
+        };
+      if (message === "fixture unknown") throw new AIError("timeout", true);
+      if (message === "fixture rate limit" && !rateFailureSent) {
+        rateFailureSent = true;
+        throw new AIError("rate_limit");
+      }
+      return {
+        content:
+          "Synthetic browser response. No real provider was contacted. <img src=x onerror=alert(1)>",
+        usage: { input: 4, output: 8 },
+      };
+    },
+  },
+};
 const server = createApp({
   db,
   auth,
-  ai: {
-    vault: new KeyVault(new Map([["test", randomBytes(32)]]), "test"),
-    rate: 20,
-    adapter: {
-      async listModels() {
-        return [
-          { id: "openai/gpt-oss-20b", restriction: null },
-          {
-            id: "whisper-large-v3",
-            restriction: "Audio model — text chat only.",
-          },
-        ];
-      },
-      async generate(config, messages) {
-        if (config.apiKey === "synthetic-invalid-key")
-          throw new AIError("credentials");
-        const message = messages.at(-1)?.content;
-        if (message === "Create a task to read the report")
-          return {
-            content: JSON.stringify({
-              reply: "Draft",
-              proposal: {
-                kind: "task",
-                title: "Read the report",
-                description: "",
-              },
-            }),
-            usage: null,
-          };
-        if (message === "Remind me on October 16 2099 at 9 am")
-          return {
-            content: JSON.stringify({
-              reply: "Draft",
-              proposal: {
-                kind: "reminder",
-                title: "Review report",
-                local_due: "2099-10-16T09:00",
-                recurrence: "none",
-              },
-            }),
-            usage: null,
-          };
-        if (message === "fixture unknown") throw new AIError("timeout", true);
-        if (message === "fixture rate limit" && !rateFailureSent) {
-          rateFailureSent = true;
-          throw new AIError("rate_limit");
-        }
-        return {
-          content:
-            "Synthetic browser response. No real provider was contacted. <img src=x onerror=alert(1)>",
-          usage: { input: 4, output: 8 },
-        };
-      },
-    },
-  },
+  ai: aiRuntime,
   logger: createLogger("silent"),
   checkReady: () => checkDatabase(db),
   webDirectory: resolve("apps/web/dist"),
 }).listen(33018, "127.0.0.1");
+const agent = new AgentRuntime(
+  db,
+  new AIService(db, aiRuntime),
+  createLogger("silent"),
+);
+let agentBusy = false;
+const agentTimer = setInterval(() => {
+  if (!agentBusy) {
+    agentBusy = true;
+    void agent
+      .runOnce()
+      .catch(() => undefined)
+      .finally(() => {
+        agentBusy = false;
+      });
+  }
+}, 100);
 const worker = spawn(
   process.execPath,
   ["--import", "tsx", "services/worker/src/main.ts"],
@@ -134,6 +179,7 @@ const worker = spawn(
 );
 for (const signal of ["SIGTERM", "SIGINT"] as const)
   process.on(signal, () => {
+    clearInterval(agentTimer);
     worker.kill();
     server.close(() => {
       void Promise.all([auth.close(), db.destroy()]);

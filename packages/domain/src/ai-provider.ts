@@ -43,6 +43,7 @@ export type Completion = {
   usage: { input: number; output: number } | null;
 };
 export interface AIAdapter {
+  agentProtocol?: "json-text";
   listModels?(apiKey: string): Promise<GroqModel[]>;
   generate(
     config: Selection & { apiKey: string },
@@ -116,6 +117,7 @@ export function groqAdapter(
   fetcher: typeof fetch = fetch,
 ): AIAdapter {
   return {
+    agentProtocol: "json-text",
     async listModels(apiKey) {
       const signal = AbortSignal.timeout(timeoutMs);
       try {

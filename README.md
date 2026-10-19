@@ -1,10 +1,32 @@
 # AXIS — Documentation Pack
 
 **Version:** 1.0  
-**Status:** M3 notification adapters, verified channel settings and durable fallback are implemented; verification results are recorded in `docs/m3-results.md`. Delivery defaults to simulation. Live WhatsApp/email, two-account Google and Groq acceptance remain pending. Full MVP release gates remain open.  
+**Status:** M5 internal planning and intelligence are implemented; verification is recorded in `docs/m5-results.md`. Notifications default to simulation. Live provider/notification acceptance and full release gates remain open.
 **Purpose:** Give a coding agent a single, coherent source of truth for building AXIS in controlled, testable milestones.
 
 ## Start here
+
+**M5 planning (2026-10-19):** The Planning page adds daily briefings, explainable
+priorities, daily/weekly drafts, explicit acceptance, history and reminder-aware
+rescheduling. Stop old processes, then `npm run dev` applies migration 011.
+Run `npm run dev:worker` for opted-in proactive alerts; `npm run dev:agent` remains
+separate for agent runs. Configure availability before time blocking. Alerts and AI
+refresh require explicit opt-in. See [M5 operation](docs/14-m5-daily-intelligence-planning.md)
+and [verification](docs/m5-results.md). Calendar remains unavailable; M6 is not started.
+
+**Agent runtime (2026-10-18):** Chat includes **Delegate a task** for internal reads
+and M4-gated task/reminder creation. Stop existing processes, then run `npm run dev`
+(migration 010), `npm run dev:worker` in a second terminal and `npm run dev:agent`
+in a third. Each user supplies their own key in AI Settings. See
+[M4.5 operation](docs/13-m4-5-agent-runtime-tool-execution.md) and
+[verification](docs/m4-5-results.md). External connectors remain unavailable;
+live model interpretation is unverified. M5 builds on this runtime.
+
+**Approval gate (2026-10-17):** The new Approvals inbox shares the backend gate
+with chat confirmations. Stop API/worker, then run `npm run dev` to apply migration
+009 and restart the worker separately. Only internal task/reminder creation is
+enabled; external/high-risk execution remains disabled. See
+[M4 scope, API, limitations and verification](docs/12-m4-approval-security-gate.md).
 
 **Reminder archive:** Finished and cancelled reminders now leave Active and remain
 in Archive for seven days before worker cleanup. Stop API/worker and restart via
@@ -49,7 +71,7 @@ For local development see [the runbook](docs/runbook.md), [M0 scope and open dec
 2. Read `docs/00-master-context.md`.
 3. Read `docs/01-product-requirements.md` and `docs/02-technical-architecture.md`.
 4. Read the remaining specifications before implementing the corresponding milestone.
-5. Continue one verified milestone at a time. M3 is the current slice; stop for review before M4. Do not build the whole product in one pass.
+5. Continue one verified milestone at a time. M5 is the current slice; stop for review before M6. Do not build the whole product in one pass.
 
 ## Document index
 

@@ -1,5 +1,20 @@
 # AXIS — Master Context
 
+**2026-10-19 planning update:** ADR-025 adds deterministic daily/weekly plans,
+grounded briefings, optional BYOK advice, explicit reminder-aware task recovery
+and opt-in proactive alerts through the existing worker. Plan acceptance is not
+task completion or a calendar write. See `14-m5-daily-intelligence-planning.md`.
+
+**2026-10-18 agent update:** ADR-024 adds durable bounded runs, internal reads and
+task/reminder proposals through M4. Run `npm run dev:agent` separately from the
+reminder worker. See `13-m4-5-agent-runtime-tool-execution.md`. Model output cannot
+grant approval; external connectors remain disabled.
+
+**2026-10-17 approval update:** ADR-023 adds a shared internal approval gate and
+dashboard inbox for task/reminder proposals. External/high-risk operations remain
+disabled; the fresh-authentication policy remains open. See
+`12-m4-approval-security-gate.md` for implemented scope and acceptance limitations.
+
 **2026-10-15 chat update:** ADR-021 and `chat-actions.md` add confirmed task and
 reminder creation from chat, superseding earlier read-only restrictions for these
 two internal operations only. General external action execution remains gated.

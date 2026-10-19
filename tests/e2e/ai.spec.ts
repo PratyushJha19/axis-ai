@@ -65,7 +65,25 @@ test("AI settings, safe key lifecycle, persisted chat and escaped output through
   await expect(
     page.getByRole("region", { name: "reminder proposal" }),
   ).toContainText("2099-10-16 09:00 · Asia/Kolkata");
-  await page.getByRole("button", { name: "Confirm create reminder" }).click();
+  await nav.getByRole("button", { name: "Approvals", exact: true }).click();
+  const approval = page
+    .getByRole("article")
+    .filter({ hasText: "Create reminder: Review report" });
+  await expect(approval).toContainText("2099-10-16T09:00");
+  await approval.getByRole("button", { name: "Approve exact action" }).click();
+  await expect(approval).toContainText("approved");
+  await page.reload();
+  await nav.getByRole("button", { name: "Approvals", exact: true }).click();
+  await approval
+    .getByRole("button", { name: "Execute approved action" })
+    .click();
+  await expect(approval).toContainText("executed");
+  await approval.getByRole("button", { name: "View audit history" }).click();
+  await expect(approval).toContainText("action_executed");
+  await nav.getByRole("button", { name: "Ask AXIS", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Conversation", exact: true })
+    .selectOption({ label: "Remind me on October 16 2099 at 9 am" });
   await expect(page.getByText(/Created · record/)).toBeVisible();
   const reminders = await page.request.get("/api/v1/reminders");
   expect(

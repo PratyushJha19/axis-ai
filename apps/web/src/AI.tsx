@@ -1,3 +1,4 @@
+import { AgentPanel } from "./Agent";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, Check, RotateCw, SquarePen } from "lucide-react";
 import { api } from "./api";
@@ -470,7 +471,7 @@ export function AIChat({
     pending !== undefined &&
     !history.messages.some((m) => m.request_id === pending.request_id);
   const canSend = !busy && !pending && message.trim().length > 0;
-  return (
+  const chat = (
     <section className={`panel ai-chat ${compact ? "compact" : ""}`}>
       <header className="ai-chat-bar">
         {compact && (
@@ -734,5 +735,12 @@ export function AIChat({
         quota. Nothing is saved until you confirm.
       </small>
     </section>
+  );
+  if (compact) return chat;
+  return (
+    <div className="ai-workspace">
+      {chat}
+      <AgentPanel onError={onError} conversationId={id} />
+    </div>
   );
 }

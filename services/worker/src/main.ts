@@ -10,6 +10,7 @@ import { mockProvider } from "./provider.js";
 import { DeliveryEngine, outboxProvider } from "./delivery.js";
 import { TelegramPoller } from "./telegram-poller.js";
 import { purgeArchivedReminders } from "./reminder-retention.js";
+import { planningAlerts } from "./planning-alerts.js";
 import {
   messagingConfig,
   channelAdapters,
@@ -54,6 +55,7 @@ try {
     logger.info({ event: "worker_started", mode: messaging.mode });
     let ready: boolean | undefined;
     let nextRetention = 0;
+    let nextPlanning = 0;
     while (!controller.signal.aborted) {
       try {
         await checkDatabase(db);
@@ -72,6 +74,15 @@ try {
         }
         await engine.runOnce();
         await delivery?.runOnce();
+        if (Date.now() >= nextPlanning) {
+          try {
+            const count = await planningAlerts(db);
+            if (count) logger.info({ event: "planning_alerts_queued", count });
+          } catch {
+            logger.warn({ event: "planning_alerts_unavailable" });
+          }
+          nextPlanning = Date.now() + 60000;
+        }
         if (Date.now() >= nextRetention) {
           const count = await purgeArchivedReminders(db);
           if (count) logger.info({ event: "reminder_archive_cleanup", count });

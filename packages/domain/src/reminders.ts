@@ -224,7 +224,7 @@ export async function cancelReminder(
   version: number,
   correlation: string,
 ) {
-  return db.transaction().execute(async (trx) => {
+  return inTransaction(db, async (trx) => {
     await sql`select id from users where id=${userId} for update`.execute(trx);
     const row = await getReminder(trx, userId, id, true);
     await editable(trx, row, version);

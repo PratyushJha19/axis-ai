@@ -9,6 +9,11 @@ import * as telegram from "../migrations/006-telegram.js";
 import * as chatActions from "../migrations/007-chat-actions.js";
 import * as reminderArchive from "../migrations/008-reminder-archive.js";
 
+import * as approvals from "../migrations/009-approvals.js";
+
+import * as agentRuns from "../migrations/010-agent-runs.js";
+import * as planning from "../migrations/011-planning.js";
+
 export function createMigrator(db: Kysely<Database>) {
   return new Migrator({
     db,
@@ -22,6 +27,9 @@ export function createMigrator(db: Kysely<Database>) {
         "006-telegram": telegram,
         "007-chat-actions": chatActions,
         "008-reminder-archive": reminderArchive,
+        "009-approvals": approvals,
+        "010-agent-runs": agentRuns,
+        "011-planning": planning,
       }),
     },
   });

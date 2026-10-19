@@ -29,7 +29,8 @@
     "build": "npm run build --workspace @axis/web",
     "dev": "powershell.exe -NoProfile -File scripts/start-local.ps1",
     "setup:google": "powershell.exe -NoProfile -File scripts/configure-google.ps1",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "dev:agent": "node --env-file-if-exists=.env --import tsx services/worker/src/agent-main.ts"
   },
   "dependencies": {
     "@js-temporal/polyfill": "^0.5.1",

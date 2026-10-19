@@ -1,3 +1,4 @@
+import { inTransaction } from "../../database/src/index.js";
 import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import { z } from "zod";
@@ -10,6 +11,7 @@ import {
 import { localToUtc } from "./reminder-time.js";
 import { audit, saveRecord } from "./records.js";
 import { saveReminder } from "./reminders.js";
+import { actionPolicy } from "./action-policy.js";
 import { DomainError } from "./errors.js";
 
 export function payloadHash(value: ChatAction["payload"]) {
@@ -76,7 +78,7 @@ export async function listChatActions(
   conversation: string,
 ) {
   return (
-    await sql<ChatAction>`select id,request_id,conversation_id,payload,payload_hash,case when status='pending' and expires_at<=now() then 'expired' else status end as status,entity_id,expires_at from ai_action_proposals where user_id=${user} and conversation_id=${conversation} order by created_at desc limit 100`.execute(
+    await sql<ChatAction>`select id,request_id,conversation_id,payload,payload_hash,case when status in ('pending','approved') and expires_at<=now() then 'expired' else status end as status,entity_id,expires_at from ai_action_proposals where user_id=${user} and conversation_id=${conversation} order by created_at desc limit 100`.execute(
       db,
     )
   ).rows;
@@ -95,59 +97,125 @@ export async function storeChatAction(
   );
   await audit(db, user, "chat_action_proposed", id, correlation);
 }
-export async function decideChatAction(
+export async function operateApproval(
   db: Kysely<Database>,
   user: string,
   id: string,
   raw: unknown,
   correlation: string,
+  operation:
+    "confirm" | "approve" | "execute" | "reject" | "cancel" = "confirm",
 ) {
   const input = actionDecision.parse(raw);
-  return db.transaction().execute(async (trx) => {
+  return inTransaction(db, async (trx) => {
     // Same owner-first lock order as reminders; concurrent confirmations serialize.
     await sql`select id from users where id=${user} for update`.execute(trx);
     const row = (
       await sql<
-        ChatAction & { expired: boolean }
-      >`select *,expires_at<=now() as expired from ai_action_proposals where user_id=${user} and id=${id} for update`.execute(
+        ChatAction & {
+          expired: boolean;
+          policy_version: string;
+          integrity: boolean;
+        }
+      >`select *,expires_at<=clock_timestamp() as expired,context_hash=approval_digest(user_id,id,payload,policy_version) as integrity from ai_action_proposals where user_id=${user} and id=${id} for update`.execute(
         trx,
       )
     ).rows[0];
     if (!row) throw new DomainError("NOT_FOUND", 404, "Proposal not found.");
     if (
+      !row.integrity ||
       input.payload_hash !== row.payload_hash ||
       payloadHash(row.payload) !== row.payload_hash
     )
       throw new DomainError(
-        "CONFLICT",
+        "PAYLOAD_MISMATCH",
         409,
         "Proposal changed. Refresh and review it again.",
       );
-    if (row.status === "succeeded" && input.decision === "confirm")
+    if (
+      row.status === "succeeded" &&
+      input.decision === "confirm" &&
+      ["confirm", "execute"].includes(operation)
+    )
       return {
         id: row.id,
         status: row.status,
         entity_id: row.entity_id,
         conversation_id: row.conversation_id,
       };
-    if (row.status !== "pending" || row.expired)
+    const result = (status: string) => ({
+      id,
+      status,
+      entity_id: null,
+      conversation_id: row.conversation_id,
+    });
+    if (row.expired && ["pending", "approved"].includes(row.status)) {
+      await sql`update ai_action_proposals set status='expired',finished_at=now() where id=${id} and user_id=${user}`.execute(
+        trx,
+      );
+      await audit(trx, user, "action_expired", id, correlation);
+      return {
+        ...result("expired"),
+        error: new DomainError(
+          "APPROVAL_EXPIRED",
+          409,
+          "Proposal expired. Request a new proposal.",
+        ),
+      };
+    }
+    if (!["pending", "approved"].includes(row.status))
       throw new DomainError(
         "CONFLICT",
         409,
         "Proposal expired or was already decided. Ask for a new proposal.",
       );
-    if (input.decision === "reject") {
-      await sql`update ai_action_proposals set status='rejected' where id=${id} and user_id=${user}`.execute(
+    if (
+      operation === "reject" ||
+      operation === "cancel" ||
+      input.decision === "reject"
+    ) {
+      const status = operation === "cancel" ? "cancelled" : "rejected";
+      if (status === "rejected" && row.status !== "pending")
+        throw new DomainError(
+          "CONFLICT",
+          409,
+          "Already approved. Cancel before execution instead.",
+        );
+      await sql`update ai_action_proposals set status=${status},finished_at=now() where id=${id} and user_id=${user}`.execute(
         trx,
       );
-      await audit(trx, user, "chat_action_rejected", id, correlation);
-      return {
-        id,
-        status: "rejected",
-        entity_id: null,
-        conversation_id: row.conversation_id,
-      };
+      await audit(trx, user, `action_${status}`, id, correlation);
+      return result(status);
     }
+    actionPolicy(`${row.payload.kind}.create`, row.policy_version);
+    if (operation === "execute" && row.status !== "approved")
+      throw new DomainError(
+        "APPROVAL_REQUIRED",
+        403,
+        "Review and approve this action before execution.",
+      );
+    if (row.status === "pending") {
+      const approved =
+        await sql`update ai_action_proposals set status='approved',approved_at=clock_timestamp() where id=${id} and user_id=${user} and expires_at>clock_timestamp() returning id`.execute(
+          trx,
+        );
+      if (!approved.rows.length) {
+        await sql`update ai_action_proposals set status='expired',finished_at=now() where id=${id} and user_id=${user}`.execute(
+          trx,
+        );
+        await audit(trx, user, "action_expired", id, correlation);
+        return {
+          ...result("expired"),
+          error: new DomainError(
+            "APPROVAL_EXPIRED",
+            409,
+            "Proposal expired before approval. Request a new proposal.",
+          ),
+        };
+      }
+      await audit(trx, user, "action_approved", id, correlation);
+    }
+    if (operation === "approve") return result("approved");
     const { timezone, due_at, ...draftFields } = row.payload;
     const draft = chatDraftSchema.parse(draftFields);
     if (draft.local_due) {
@@ -170,46 +238,99 @@ export async function decideChatAction(
           "The proposed time is no longer valid. Ask for a future time.",
         );
     }
-    const record =
-      draft.kind === "task"
-        ? await saveRecord(
-            trx,
-            "tasks",
-            user,
-            {
-              title: draft.title,
-              description: draft.description,
-              due_at,
-              due_timezone: timezone,
-            },
-            correlation,
-            { key: id },
-          )
-        : await saveReminder(
-            trx,
-            user,
-            {
-              title: draft.title,
-              body: draft.body,
-              local_due: draft.local_due,
-              timezone,
-              recurrence: draft.recurrence,
-              confirmed: true,
-            },
-            correlation,
-            { key: id },
-          );
-    await sql`update ai_action_proposals set status='succeeded',entity_id=${record.id} where id=${id} and user_id=${user}`.execute(
+    const claimed =
+      await sql`update ai_action_proposals set status='executing',execution_started_at=clock_timestamp() where id=${id} and user_id=${user} and expires_at>clock_timestamp() returning id`.execute(
+        trx,
+      );
+    if (!claimed.rows.length) {
+      await sql`update ai_action_proposals set status='expired',finished_at=now() where id=${id} and user_id=${user}`.execute(
+        trx,
+      );
+      await audit(trx, user, "action_expired", id, correlation);
+      return {
+        ...result("expired"),
+        error: new DomainError(
+          "APPROVAL_EXPIRED",
+          409,
+          "Proposal expired before execution. Request a new proposal.",
+        ),
+      };
+    }
+    await audit(trx, user, "action_execution_started", id, correlation);
+    // Only local transactional handlers are registered. Rollback proves no effect on failure.
+    await sql`savepoint action_effect`.execute(trx);
+    let record: { id: string };
+    try {
+      record =
+        draft.kind === "task"
+          ? await saveRecord(
+              trx,
+              "tasks",
+              user,
+              {
+                title: draft.title,
+                description: draft.description,
+                due_at,
+                due_timezone: timezone,
+              },
+              correlation,
+              { key: id },
+            )
+          : await saveReminder(
+              trx,
+              user,
+              {
+                title: draft.title,
+                body: draft.body,
+                local_due: draft.local_due,
+                timezone,
+                recurrence: draft.recurrence,
+                confirmed: true,
+              },
+              correlation,
+              { key: id },
+            );
+    } catch (error) {
+      await sql`rollback to savepoint action_effect`.execute(trx);
+      const code = error instanceof DomainError ? error.code : "ACTION_FAILED";
+      await sql`update ai_action_proposals set status='failed',failure_code=${code},finished_at=now() where id=${id} and user_id=${user}`.execute(
+        trx,
+      );
+      await audit(trx, user, "action_failed", id, correlation);
+      return {
+        ...result("failed"),
+        error: new DomainError(
+          code,
+          409,
+          "Action failed without creating a record. Request a new proposal.",
+        ),
+      };
+    }
+    await sql`update ai_action_proposals set status='succeeded',finished_at=now(),entity_id=${record.id} where id=${id} and user_id=${user}`.execute(
       trx,
     );
     await audit(trx, user, "chat_action_confirmed", id, correlation);
+    await audit(trx, user, "action_executed", id, correlation);
     return {
       id,
       status: "succeeded",
       entity_id: record.id,
       conversation_id: row.conversation_id,
     };
+  }).then((result) => {
+    if ("error" in result) throw result.error;
+    return result;
   });
+}
+
+export function decideChatAction(
+  db: Kysely<Database>,
+  user: string,
+  id: string,
+  raw: unknown,
+  correlation: string,
+) {
+  return operateApproval(db, user, id, raw, correlation);
 }
 
 export function chatActionInstructions(

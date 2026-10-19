@@ -20,7 +20,14 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Test database creation failed' }
   Remove-Item Env:PGPASSWORD
   $env:TEST_DATABASE_URL = "postgresql://axis_local:${axisPassword}@127.0.0.1:55432/$axisDatabase"
-  if ($Browser) { npx playwright test } else { npm run test:integration }
+  if ($Browser) {
+    # Each workflow retains the production request limit, with an independent
+    # server/window instead of accumulating every synthetic user on one test IP.
+    foreach ($axisSpec in (Get-ChildItem -LiteralPath tests/e2e -Filter '*.spec.ts' | Sort-Object Name)) {
+      npx playwright test $axisSpec.Name
+      if ($LASTEXITCODE -ne 0) { throw "Browser verification failed: $($axisSpec.Name)" }
+    }
+  } else { npm run test:integration }
   if ($LASTEXITCODE -ne 0) { throw 'Verification failed' }
   if (-not $Browser -and $axisStarted) {
     & "$axisPgBin/pg_ctl.exe" -D .local/pgdata -m fast -w stop

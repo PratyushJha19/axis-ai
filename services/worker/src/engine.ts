@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { planningAlertAllowed } from "../../../packages/domain/src/planning-alert-policy.js";
 import { sql, type Kysely } from "kysely";
 import { z } from "zod";
 import type { Logger } from "pino";
@@ -120,6 +121,19 @@ export class ReminderEngine {
         return { row, attempt: previous, reconcile: true };
       }
       const preferences = await getPreferences(trx, row.user_id);
+      if (!(await planningAlertAllowed(trx, row.user_id, row.id, now))) {
+        await sql`update reminders set status='cancelled',cancelled_at=${now},next_attempt_at=null,lease_token=null,lease_until=null,version=version+1,reason='planning_source_changed' where id=${row.id}`.execute(
+          trx,
+        );
+        await audit(
+          trx,
+          row.user_id,
+          "planning_alert_suppressed",
+          row.id,
+          row.correlation_id,
+        );
+        return null;
+      }
       const deferred = deferredUntil(
         now,
         owner.rows[0]?.timezone || row.timezone,

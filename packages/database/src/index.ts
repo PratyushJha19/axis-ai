@@ -24,7 +24,7 @@ export async function checkDatabase(db: Kysely<Database>) {
   const result = await sql<{
     schema_version: number;
   }>`select schema_version from foundation_metadata where id = 1`.execute(db);
-  if (result.rows[0]?.schema_version !== 8)
+  if (result.rows[0]?.schema_version !== 11)
     throw new Error("Schema unavailable");
 }
 

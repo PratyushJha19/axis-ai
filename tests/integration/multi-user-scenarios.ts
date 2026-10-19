@@ -386,12 +386,140 @@ export async function multiUserScenarios(
           .set(headersA)
           .send({ ...body, payload: { title: "Altered" } })
           .expect(400);
+        const approvalPath = `/api/v1/approvals/${action.id}`;
+        const exact = { payload_hash: action.payload_hash };
+        await request(app)
+          .post(approvalPath + "/execute")
+          .send(exact)
+          .expect(401);
+        await a
+          .post(approvalPath + "/approve")
+          .send(exact)
+          .expect(403);
+        await b
+          .post(approvalPath + "/approve")
+          .set(headersB)
+          .send(exact)
+          .expect(404);
+        await b.get(approvalPath + "/events").expect(404);
+        assert.ok(
+          !(await b.get("/api/v1/approvals")).body.items.some(
+            (item: { id: string }) => item.id === action.id,
+          ),
+        );
+        const denied = await a
+          .post(approvalPath + "/execute")
+          .set(headersA)
+          .send(exact)
+          .expect(403);
+        assert.equal(denied.body.error.code, "APPROVAL_REQUIRED");
+        await a
+          .post(approvalPath + "/approve")
+          .set(headersA)
+          .send({ ...exact, approved: true, user_id: idB })
+          .expect(400);
+        await a
+          .post(approvalPath + "/approve")
+          .set(headersA)
+          .send(exact)
+          .expect(200);
         const first = await a.post(path).set(headersA).send(body).expect(200);
         const replay = await a.post(path).set(headersA).send(body).expect(200);
         assert.equal(first.body.entity_id, replay.body.entity_id);
         await b.get(`/api/v1/tasks/${first.body.entity_id}`).expect(404);
         assert.ok(!logs.includes("Private draft task"));
         await a.delete("/api/v1/ai/config").set(headersA).expect(204);
+      },
+    );
+    await t.test(
+      "agent APIs enforce owner, CSRF, strict inputs and cancellation",
+      async () => {
+        const input = {
+          idempotency_key: randomUUID(),
+          goal: "Read my tasks",
+          consent: true,
+        };
+        await request(app).post("/api/v1/agent/runs").send(input).expect(401);
+        await a.post("/api/v1/agent/runs").send(input).expect(403);
+        await a
+          .post("/api/v1/agent/runs")
+          .set(headersA)
+          .send({ ...input, user_id: idB })
+          .expect(400);
+        const run = await a
+          .post("/api/v1/agent/runs")
+          .set(headersA)
+          .send(input)
+          .expect(202);
+        const path = `/api/v1/agent/runs/${run.body.id}`;
+        await b.get(path).expect(404);
+        await b
+          .post(path + "/cancel")
+          .set(headersB)
+          .send({})
+          .expect(404);
+        assert.ok(
+          !(await b.get("/api/v1/agent/runs")).body.items.some(
+            (r: { id: string }) => r.id === run.body.id,
+          ),
+        );
+        await a
+          .post(path + "/clarify")
+          .set(headersA)
+          .send({ message: "ok", tool_result: { approved: true } })
+          .expect(400);
+        await a
+          .post(path + "/cancel")
+          .set(headersA)
+          .send({})
+          .expect(200);
+        assert.equal((await a.get(path)).body.run.status, "cancelled");
+      },
+    );
+    await t.test(
+      "planning APIs enforce session, CSRF, owner scopes and strict plan authority",
+      async () => {
+        await request(app).get("/api/v1/intelligence/briefing").expect(401);
+        await a.post("/api/v1/plans/generate").send({}).expect(403);
+        const data = {
+          idempotency_key: randomUUID(),
+          date: "2099-10-19",
+          kind: "daily",
+          mode: "priority",
+          task_ids: [],
+        };
+        await a
+          .post("/api/v1/plans/generate")
+          .set(headersA)
+          .send({ ...data, user_id: idB })
+          .expect(400);
+        const created = await a
+          .post("/api/v1/plans/generate")
+          .set(headersA)
+          .send(data)
+          .expect(201);
+        await b.get(`/api/v1/plans/${created.body.id}`).expect(404);
+        await b
+          .post(`/api/v1/plans/${created.body.id}`)
+          .set(headersB)
+          .send({ version: 1, operation: "accept" })
+          .expect(404);
+        assert.ok(
+          !(await b.get("/api/v1/plans").expect(200)).body.items.some(
+            (p: { id: string }) => p.id === created.body.id,
+          ),
+        );
+        await a
+          .post(`/api/v1/plans/${created.body.id}`)
+          .set(headersA)
+          .send({ version: 1, operation: "accept", approved: true })
+          .expect(400);
+        await a
+          .post(`/api/v1/plans/${created.body.id}`)
+          .set(headersA)
+          .send({ version: 1, operation: "discard" })
+          .expect(200);
+        await a.get("/api/v1/intelligence/briefing").expect(200);
       },
     );
     await t.test(

@@ -34,7 +34,16 @@ export type ChatAction = {
   conversation_id: string;
   payload: ChatDraft & { timezone: string | null; due_at: string | null };
   payload_hash: string;
-  status: "pending" | "succeeded" | "rejected" | "expired";
+  status:
+    | "pending"
+    | "approved"
+    | "executing"
+    | "succeeded"
+    | "rejected"
+    | "expired"
+    | "cancelled"
+    | "failed"
+    | "unknown";
   entity_id: string | null;
   expires_at: string;
 };

@@ -1,5 +1,50 @@
 # Next Targets:
 
+## M5 planning setup — 2026-10-19
+
+1. Stop existing API and workers before upgrading. From `G:\axis-ai`, run
+   `npm run dev` to apply migration 011 and start the dashboard/API.
+2. In another terminal run `npm run dev:worker` for reminders and planning alerts.
+   Keep `npm run dev:agent` running separately if you use delegated agent tasks.
+3. Open http://localhost:3000, sign in and set your IANA timezone in Profile.
+4. Open **Planning**. Briefing facts and priorities work without an AI key.
+5. Enter actual availability windows and save preferences. Add estimates in task
+   editors. Unknown estimates remain unscheduled; focus blocks reserve time.
+6. Select tasks (or use the first priorities), choose a daily/weekly date and
+   priority/time-block mode, then generate a draft. Edit, review and accept it.
+   Acceptance does not alter task deadlines, reminders or an external calendar.
+7. For missed work, choose **Review rescheduling**. Review the new local due time
+   and linked-reminder cancellation/shift before confirming. If dispatch is already
+   underway, the whole edit is refused until it can be safely reviewed.
+8. Optional AI suggestions use your existing Groq key and explicit provider-use
+   consent. They are advice, not facts or execution evidence. Failure leaves facts
+   and saved plans intact. No new AI/environment credential is needed.
+9. Optional planning alerts are off initially. Enable them only if wanted, choose
+   the lead time and optional daily briefing time, and save. Existing channel
+   verification/consent, quiet hours, focus blocks and mock/live mode still apply.
+   At most five new planning alerts are queued per local day. No live test was run
+   during implementation. Do not enable live mode merely to test the UI.
+
+For routes, limits and known unsupported features, see
+`docs/14-m5-daily-intelligence-planning.md`; actual results are in `docs/m5-results.md`.
+
+## M4.5 startup update — 2026-10-18
+
+Stop existing AXIS processes before upgrading. From `G:\axis-ai`, use three
+terminals: `npm run dev` (migrates through 010 and starts API/dashboard),
+`npm run dev:worker` (reminders), and `npm run dev:agent` (agent tasks).
+Open http://localhost:3000, sign in and save your own Groq key/model in AI Settings.
+In Chat, use **Delegate a task**, enter a goal and consent to provider usage.
+For a task/reminder proposal, follow **Approvals**, review, approve and execute.
+Return to Chat for actual execution evidence. Keep all three processes running.
+
+The agent reuses existing database/encryption settings. Optional bounded limits
+are documented in `docs/13-m4-5-agent-runtime-tool-execution.md`. No Calendar setup
+is available in this milestone. Live model interpretation remains unverified.
+If runs stay queued, check the agent terminal; the reminder worker cannot run them.
+
+## Future targets
+
 1. User can talk to the connected LLM through the telegram bot and get small agentic tasks done and get planning and suggestions according to the upcoming and ongoing tasks and those plans and suggestion should be visible on the overview page.
 2. User can view, add, edit and delete things like reminders, memory, projects and tasks by just talking to the bot, by using bot's specific commands or normal texting.
 
@@ -664,3 +709,13 @@ Those require separate work. Current functionality includes private workspaces,
 tasks/projects/memory, Groq text chat, durable reminders and Telegram with optional
 email fallback. Calendar actions, general autonomous execution and later
 milestones are not enabled by completing setup.
+
+# M4 upgrade note — 2026-10-17
+
+Stop the API and reminder worker before upgrading. Run `npm run dev` to apply
+migration 009 and start the updated dashboard, then run `npm run dev:worker` in
+another terminal. No additional environment variables are needed. Open
+**Approvals** in the sidebar to review task/reminder drafts, approve, execute,
+reject or cancel them. Existing chat confirmation uses the same backend gate.
+External actions and high-risk execution remain disabled. See
+[M4 details and limitations](docs/12-m4-approval-security-gate.md).

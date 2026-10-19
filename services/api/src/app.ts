@@ -18,6 +18,10 @@ import {
 } from "./notification-routes.js";
 import type { MessagingConfig } from "../../../packages/domain/src/notification-provider.js";
 
+import { agentRouter } from "./agent-routes.js";
+import { approvalRouter } from "./approval-routes.js";
+import { planningRouter } from "./planning-routes.js";
+
 export function createApp(dependencies: {
   checkReady: () => Promise<void>;
   logger: Logger;
@@ -106,6 +110,12 @@ export function createApp(dependencies: {
       dependencies.auth.protect,
       express.json({ limit: "32kb" }),
       notificationRouter(dependencies.db, messaging),
+      approvalRouter(dependencies.db),
+      agentRouter(dependencies.db),
+      planningRouter(
+        dependencies.db,
+        new AIService(dependencies.db, dependencies.ai),
+      ),
       aiRouter(
         new AIService(dependencies.db, dependencies.ai),
         dependencies.logger,
