@@ -1,5 +1,9 @@
 # Next Targets:
 
+For the selected free Vercel + Render demo, follow
+[the step-by-step hosting guide](docs/render-vercel-demo.md). It uses a new test
+database and does not run reminder or agent workers.
+
 ## M6 Calendar and backup setup — 2026-10-20
 
 1. Stop API and workers before upgrading. `npm run dev` applies migration 012 and

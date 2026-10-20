@@ -35,8 +35,12 @@ export function createApp(dependencies: {
   messaging?: MessagingConfig;
   calendar?: CalendarService;
   origin?: string;
+  trustProxyHops?: number;
+  demoMode?: boolean;
 }) {
   const app = express();
+  // Enable only behind a host that overwrites forwarding headers (Render).
+  app.set("trust proxy", dependencies.trustProxyHops === 1 ? 1 : false);
   app.disable("x-powered-by");
   app.use(
     helmet({
@@ -82,12 +86,17 @@ export function createApp(dependencies: {
     }
   });
   app.get("/auth/status", (_req, res) =>
-    res.json({ configured: Boolean(dependencies.auth) }),
+    res.json({
+      configured: Boolean(dependencies.auth),
+      demoMode: Boolean(dependencies.demoMode),
+    }),
   );
   const messaging = dependencies.messaging || {
     mode: "mock" as const,
     sandbox: true,
   };
+  if (dependencies.demoMode && messaging.mode !== "mock")
+    throw new Error("Demo mode requires simulated notifications.");
   if (dependencies.db)
     app.use("/webhooks", notificationWebhooks(dependencies.db, messaging));
   if (dependencies.auth && dependencies.db) {
@@ -134,7 +143,7 @@ export function createApp(dependencies: {
       ),
       notificationRouter(dependencies.db, messaging),
       approvalRouter(dependencies.db),
-      agentRouter(dependencies.db),
+      agentRouter(dependencies.db, dependencies.demoMode),
       planningRouter(
         dependencies.db,
         new AIService(dependencies.db, dependencies.ai),

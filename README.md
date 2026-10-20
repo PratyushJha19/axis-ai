@@ -6,6 +6,11 @@
 
 ## Start here
 
+**Free hosted demo:** Vercel frontend + Render API preparation is in
+[the deployment guide](docs/render-vercel-demo.md). This optional demo disables
+background execution; reminders can be saved but are not delivered. No cloud
+service has been deployed by this change.
+
 **M6 implementation:** Separate read-only Google Calendar consent and cached busy
 periods extend Planning. Migration 012 adds Calendar records and recovery quarantine.
 Operator commands create encrypted PostgreSQL backups and verify isolated restores.

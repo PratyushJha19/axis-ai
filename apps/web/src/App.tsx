@@ -180,6 +180,7 @@ export function App() {
   const [user, setUser] = useState<Profile | null>(null),
     [boot, setBoot] = useState(true),
     [configured, setConfigured] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
   const [view, setView] = useState<View>(
       new URLSearchParams(window.location.search).get("view") === "reminders"
         ? "Reminders"
@@ -263,6 +264,7 @@ export function App() {
       .then(([status, session]) => {
         if (!active) return;
         setConfigured(status.configured);
+        setDemoMode(status.demoMode === true);
         if (session) {
           setUser(session.user);
           setCsrf(session.csrfToken);
@@ -694,6 +696,13 @@ export function App() {
           </div>
         </header>
         <main className="main-content">
+          {demoMode && (
+            <p role="status" className="notice">
+              Free demo: reminders can be saved but notifications, automatic
+              archive cleanup, proactive alerts and delegated agent runs do not
+              run. The API may take a minute to wake up. Use test data only.
+            </p>
+          )}
           <div
             className={`page-heading ${view === "Overview" ? "sr-only" : ""}`}
           >

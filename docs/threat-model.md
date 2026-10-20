@@ -143,3 +143,15 @@ channel cannot recall an already submitted request. Public hosting, production
 sender approval, provider account compromise and backup/restore remain separate
 operational gates. M3's personal-notification consent does not implement or bypass
 the future approval executor.
+
+# Free demo hosting boundary — 2026-10-20
+
+The optional Vercel/Render demo uses a new database and mock notifications.
+Vercel proxies auth/API requests under one browser origin; credentials stay on
+Render. Host binding and one-hop proxy trust require explicit configuration and
+default to loopback/no trust. Enable proxy trust only behind Render ingress that
+sets forwarding headers. Live checks must verify secure cookies, original Origin
+preservation, no caching and Google callback routing before sharing the demo.
+DEMO_MODE rejects delegated execution and worker startup; it cannot provide timely
+reminder delivery, retention cleanup or scheduled backups. Provider free quotas and
+sleep behavior are availability risks. See `render-vercel-demo.md`.

@@ -4,6 +4,40 @@ import { createServer } from "node:net";
 import { once } from "node:events";
 import test from "node:test";
 
+test("demo workers exit before connecting to a database or provider", async () => {
+  for (const entry of [
+    "services/worker/src/main.ts",
+    "services/worker/src/agent-main.ts",
+  ]) {
+    const child = spawn(process.execPath, ["--import", "tsx", entry], {
+      env: {
+        ...process.env,
+        DEMO_MODE: "true",
+        DATABASE_URL:
+          "postgresql://synthetic:synthetic@127.0.0.1:1/axis_test_demo",
+        AI_CREDENTIALS_ENCRYPTION_KEY: "",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", (chunk) => {
+      output += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      output += String(chunk);
+    });
+    const timer = setTimeout(() => child.kill(), 10000);
+    try {
+      const [code] = await once(child, "close");
+      assert.equal(code, 1);
+      assert.doesNotMatch(output, /worker_started|synthetic/);
+    } finally {
+      clearTimeout(timer);
+      child.kill();
+    }
+  }
+});
+
 test("invalid AI encryption fails startup with a safe configuration diagnostic", async () => {
   const secret = "synthetic-invalid-master-secret";
   const child = spawn(

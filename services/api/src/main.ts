@@ -37,6 +37,8 @@ try {
     db,
     auth,
     origin: authConfig?.origin,
+    trustProxyHops: config.TRUST_PROXY_HOPS,
+    demoMode: config.DEMO_MODE,
     calendar: new CalendarService(
       db,
       authConfig && aiConfig
@@ -52,7 +54,7 @@ try {
       : undefined,
     webDirectory: resolve("apps/web/dist"),
   });
-  const server = app.listen(config.PORT, "127.0.0.1");
+  const server = app.listen(config.PORT, config.HOST);
   server.once("listening", () => {
     logger.info({ event: "api_started", port: config.PORT });
   });
@@ -62,7 +64,7 @@ try {
       reason:
         error.code === "EADDRINUSE"
           ? "Port is already in use. Stop the existing AXIS process before restarting."
-          : "Unable to listen on the configured local port.",
+          : "Unable to listen on the configured address and port.",
       port: config.PORT,
     });
     process.exitCode = 1;

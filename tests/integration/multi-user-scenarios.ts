@@ -94,6 +94,101 @@ export async function multiUserScenarios(
     idB: string;
   try {
     await t.test(
+      "HTTPS proxy login keeps secure cookies, owner sessions and CSRF; default does not trust forwarding headers",
+      async () => {
+        const secureAuth = createAuth(
+          db,
+          connectionString,
+          {
+            origin: "https://axis-demo.example",
+            secret: randomBytes(48).toString("hex"),
+            clientId: "synthetic",
+            clientSecret: "synthetic",
+          },
+          provider,
+        );
+        try {
+          const deps = {
+            db,
+            auth: secureAuth,
+            logger: createLogger("silent"),
+            checkReady: async () => undefined,
+          };
+          const direct = await request(createApp(deps))
+            .get("/auth/google")
+            .set("X-Forwarded-Proto", "https")
+            .expect(302);
+          assert.equal(direct.headers["set-cookie"], undefined);
+          const proxied = createApp({ ...deps, trustProxyHops: 1 });
+          const start = await request(proxied)
+            .get("/auth/google")
+            .set("X-Forwarded-Proto", "https")
+            .expect(302);
+          const cookie = start.headers["set-cookie"]?.[0];
+          assert.ok(cookie);
+          assert.match(cookie, /;\s*Secure/);
+          assert.match(cookie, /HttpOnly/);
+          assert.match(cookie, /SameSite=Lax/);
+          const state = new URL(start.headers.location!).searchParams.get(
+            "state",
+          );
+          const callback = await request(proxied)
+            .get(`/auth/google/callback?state=${state}&code=proxy`)
+            .set("Cookie", cookie.split(";")[0]!)
+            .set("X-Forwarded-Proto", "https")
+            .expect(302);
+          const callbackCookie = callback.headers["set-cookie"]?.[0];
+          assert.ok(callbackCookie);
+          const sessionCookie = callbackCookie.split(";")[0]!;
+          const me = await request(proxied)
+            .get("/api/v1/me")
+            .set("Cookie", sessionCookie)
+            .set("X-Forwarded-Proto", "https")
+            .expect(200);
+          assert.equal(me.body.user.email, "proxy@example.invalid");
+          await request(proxied)
+            .post("/api/v1/logout")
+            .set("Cookie", sessionCookie)
+            .set("Origin", "https://foreign.example")
+            .set("X-CSRF-Token", me.body.csrfToken)
+            .expect(403);
+          await request(proxied)
+            .post("/api/v1/logout")
+            .set("Cookie", sessionCookie)
+            .set("Origin", "https://axis-demo.example")
+            .set("X-CSRF-Token", me.body.csrfToken)
+            .expect(204);
+        } finally {
+          await secureAuth.close();
+        }
+      },
+    );
+    await t.test(
+      "demo rejects delegated runs after authentication while ordinary owned records remain available",
+      async () => {
+        const demo = request.agent(
+          createApp({
+            db,
+            auth,
+            demoMode: true,
+            logger: createLogger("silent"),
+            checkReady: async () => undefined,
+          }),
+        );
+        await demo.post("/api/v1/agent/runs").send({}).expect(401);
+        await login(demo, "demo");
+        const me = await demo.get("/api/v1/me").expect(200);
+        const denied = await demo
+          .post("/api/v1/agent/runs")
+          .set("Origin", origin)
+          .set("X-CSRF-Token", me.body.csrfToken)
+          .send({})
+          .expect(503);
+        assert.equal(denied.body.error.code, "DEMO_UNAVAILABLE");
+        await demo.get("/api/v1/tasks").expect(200);
+      },
+    );
+    await t.test(
       "multi-user verified Google enrollment and concurrent same-subject signup",
       async () => {
         await Promise.all([login(a, "a"), login(b, "b")]);

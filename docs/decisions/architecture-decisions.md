@@ -302,6 +302,22 @@ Record material choices here. Do not silently replace decisions.
 - **Revisit:** Additional calendars, deployed storage/scheduler/alert provider,
   broader OAuth account linking or future Calendar writes behind M4.
 
+### ADR-027 — Strictly free Vercel/Render demonstration
+
+- **Status:** Owner selected a strictly free demo on 2026-10-20; hosting pending.
+- **Decision:** Vercel serves the existing frontend and proxies auth/API paths to
+  a free Render web service. Proposed Neon Free PostgreSQL avoids Render's
+  30-day free database expiry. Use an empty demo database and simulated delivery.
+- **Authority:** Existing sessions, owner isolation, CSRF and approval checks stay
+  intact. Explicit HOST and one-hop proxy trust support Render HTTPS ingress;
+  defaults remain loopback and no proxy trust. No wildcard CORS is added.
+- **Limits:** DEMO_MODE advertises missing background functions, refuses worker
+  startup and delegated submissions, and requires mock notifications. Reminder
+  records remain editable without a claim of delivery. No paid worker, keep-alive,
+  deployment or infrastructure creation is included.
+- **Evidence:** `../render-vercel-demo.md`. Hosted OAuth, proxy behavior, cold
+  starts and database recovery require later verification.
+
 ### ADR template — Title
 
 - **Status:** Proposed / Accepted / Superseded

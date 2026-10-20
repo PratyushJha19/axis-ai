@@ -1,0 +1,36 @@
+# Free demo only. No database or paid worker is provisioned by this blueprint.
+services:
+  - type: web
+    name: axis-api-demo
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run typecheck
+    startCommand: npm run start:demo
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: DEMO_MODE
+        value: "true"
+      - key: NOTIFICATION_MODE
+        value: mock
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: AI_CREDENTIALS_ENCRYPTION_KEY
+        sync: false
+      - key: AI_CREDENTIALS_KEY_VERSION
+        value: v1

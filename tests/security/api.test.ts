@@ -4,6 +4,22 @@ import request from "supertest";
 import { createApp } from "../../services/api/src/app.js";
 import { createLogger } from "../../packages/observability/src/index.js";
 
+test("demo status is public but live notification configuration is rejected", async () => {
+  const deps = {
+    logger: createLogger("silent"),
+    checkReady: async () => undefined,
+    demoMode: true,
+  };
+  const status = await request(createApp(deps)).get("/auth/status").expect(200);
+  assert.equal(status.body.demoMode, true);
+  assert.equal(status.headers["cache-control"], "no-store");
+  assert.throws(
+    () => createApp({ ...deps, messaging: { mode: "live", sandbox: true } }),
+    /simulated/,
+  );
+  assert.equal(createApp(deps).get("trust proxy"), false);
+});
+
 test("health, fail-closed API, and private input handling", async () => {
   let logs = "";
   let ready = true;

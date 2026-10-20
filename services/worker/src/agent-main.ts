@@ -16,6 +16,7 @@ process.on("SIGTERM", () => controller.abort());
 try {
   const config = readConfig(),
     aiConfig = readAIConfig();
+  if (config.DEMO_MODE) throw new Error("Workers are disabled in demo mode.");
   const db = createDatabase(config.DATABASE_URL);
   const runtime = new AgentRuntime(
     db,

@@ -13,6 +13,8 @@
     "apps/*"
   ],
   "scripts": {
+    "start:api": "node --env-file-if-exists=.env --import tsx services/api/src/main.ts",
+    "start:demo": "npm run db:migrate && npm run start:api",
     "backup": "node --env-file-if-exists=.env --import tsx scripts/backup.ts create",
     "backup:verify": "node --env-file-if-exists=.env --import tsx scripts/backup.ts verify",
     "backup:restore-check": "node --env-file-if-exists=.env --import tsx scripts/backup.ts restore-check",

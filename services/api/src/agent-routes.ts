@@ -3,9 +3,21 @@ import { z } from "zod";
 import type { Kysely } from "kysely";
 import type { Database } from "../../../packages/database/src/index.js";
 import { AgentService } from "../../../packages/domain/src/agent.js";
-export function agentRouter(db: Kysely<Database>) {
+import { DomainError } from "../../../packages/domain/src/errors.js";
+export function agentRouter(db: Kysely<Database>, demoMode = false) {
   const router = Router(),
     service = new AgentService(db);
+  router.use("/agent/runs", (req, _res, next) => {
+    if (demoMode && req.method === "POST" && !req.path.endsWith("/cancel"))
+      return next(
+        new DomainError(
+          "DEMO_UNAVAILABLE",
+          503,
+          "Delegated agent runs are unavailable in this demo. Use ordinary chat instead.",
+        ),
+      );
+    next();
+  });
   router.post("/agent/runs", async (req, res) =>
     res
       .status(202)
