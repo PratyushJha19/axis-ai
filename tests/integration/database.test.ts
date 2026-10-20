@@ -21,6 +21,8 @@ import { approvalScenarios } from "./approval-scenarios.js";
 import { chatActionScenarios } from "./chat-action-scenarios.js";
 import { reminderRetentionScenarios } from "./reminder-retention-scenarios.js";
 import { planningScenarios } from "./planning-scenarios.js";
+import { calendarScenarios } from "./calendar-scenarios.js";
+import { backupScenarios } from "./backup-scenarios.js";
 
 test("empty PostgreSQL migrates, repeats safely, and persists across connection restart", async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
@@ -91,7 +93,7 @@ test("empty PostgreSQL migrates, repeats safely, and persists across connection 
     );
     const first = await createMigrator(db).migrateToLatest();
     assert.equal(first.error, undefined);
-    assert.equal(first.results?.length, 3);
+    assert.equal(first.results?.length, 4);
     const migrated = (
       await sql<{
         status: string;
@@ -158,6 +160,8 @@ test("empty PostgreSQL migrates, repeats safely, and persists across connection 
     await telegramScenarios(t, db);
     await reminderRetentionScenarios(t, db);
     await planningScenarios(t, db, connectionString);
+    await calendarScenarios(t, db);
+    await backupScenarios(t, connectionString);
   } finally {
     await db.destroy();
   }

@@ -1,5 +1,24 @@
 # Initial threat model
 
+## M6 Calendar and recovery (2026-10-20)
+
+Calendar consent is independent from sign-in, with single-use ten-minute database
+state bound to the initiating user/session plus PKCE/nonce and same Google subject.
+Credentials use owner/purpose/version authenticated encryption. No client token,
+arbitrary endpoint, Calendar write method or model Calendar-text context is exposed.
+Cached text is untrusted and rendered as text. Refresh leases and connection revisions
+prevent a delayed result restoring disconnected data. Local disconnection commits
+before best-effort remote revocation; an already-started request cannot be recalled.
+
+Whole-database backups contain personal data and application-encrypted credentials.
+AES-GCM, authenticated metadata/checksums, private OS ACLs and separate operator keys
+protect artifacts; there is no ordinary-user backup endpoint. Restore checks use
+fresh local databases only. Cutover copies remain quarantined, with sessions cleared.
+Database snapshots cannot undo messages or reconstruct post-snapshot completion;
+quarantine requires operator reconciliation, never automatic replay. Independent
+storage, durable schedules, remote alerts, live consent and deployed RPO/RTO remain
+unverified operational gates. Filesystem administrators remain trusted operators.
+
 ## Telegram replacement (2026-10-15)
 
 Only authenticated users can request hashed, single-use linking challenges and

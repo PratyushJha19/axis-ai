@@ -10,6 +10,8 @@ import { createAuth, readAuthConfig } from "./auth.js";
 import { readAIConfig } from "../../../packages/domain/src/ai-crypto.js";
 import { groqAdapter } from "../../../packages/domain/src/ai-provider.js";
 import { messagingConfig } from "../../../packages/domain/src/notification-provider.js";
+import { CalendarService } from "../../../packages/domain/src/calendar.js";
+import { googleCalendarProvider } from "../../../packages/domain/src/calendar-provider.js";
 
 const logger = createLogger();
 let startupPhase = "base";
@@ -34,6 +36,16 @@ try {
     logger,
     db,
     auth,
+    origin: authConfig?.origin,
+    calendar: new CalendarService(
+      db,
+      authConfig && aiConfig
+        ? {
+            vault: aiConfig.vault,
+            provider: googleCalendarProvider(authConfig),
+          }
+        : undefined,
+    ),
     messaging: messagingConfig(),
     ai: aiConfig
       ? { ...aiConfig, adapter: groqAdapter(aiConfig.timeout) }

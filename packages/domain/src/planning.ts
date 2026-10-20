@@ -30,6 +30,7 @@ import { DomainError } from "./errors.js";
 import { localToUtc } from "./reminder-time.js";
 import type { Reminder } from "../../shared/src/reminders.js";
 import { Temporal } from "@js-temporal/polyfill";
+import { CalendarService } from "./calendar.js";
 const hash = (v: unknown) =>
   createHash("sha256").update(JSON.stringify(v)).digest("hex");
 const serial = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -147,6 +148,11 @@ export class PlanningService {
         "Discard older accepted plans before adding more.",
       );
     return [
+      ...(
+        await new CalendarService(this.db, undefined, this.now).view(user)
+      ).events
+        .filter((e) => e.busy)
+        .map((e) => ({ start: e.start, end: e.end })),
       ...(await getPreferences(this.db, user)).focus_blocks,
       ...rows.flatMap((r) =>
         r.document.entries
@@ -248,7 +254,17 @@ export class PlanningService {
       ),
       limited: s.limited,
       missing: [
-        "Calendar is not connected.",
+        ...((
+          await new CalendarService(this.db, undefined, this.now).view(
+            user,
+            range.start,
+            range.end,
+          )
+        ).warning
+          ? [
+              "Calendar may be unavailable or stale; review Calendar before time blocking.",
+            ]
+          : []),
         "Projects have no deadline or priority field; no project deadlines are inferred.",
         "Task dependencies and recurring tasks are not implemented.",
       ],
@@ -367,6 +383,16 @@ export class PlanningService {
         await svc.blocked(user),
         this.now(),
       );
+      const calendarRange = dayRange(date, s.zone, v.kind === "weekly" ? 7 : 1);
+      const calendar = await new CalendarService(trx, undefined, this.now).view(
+        user,
+        calendarRange.start,
+        calendarRange.end,
+      );
+      if (calendar.warning) doc.assumptions.push(calendar.warning);
+      doc.assumptions.push(
+        "AXIS task blocks are internal proposals; no Google Calendar events are created.",
+      );
       if (s.limited)
         doc.assumptions.push(
           "Source data is limited; use task selection to narrow planning.",
@@ -425,6 +451,18 @@ export class PlanningService {
           await svc.blocked(user, id),
           this.now(),
         );
+        const range = dayRange(
+          doc.date,
+          doc.timezone,
+          doc.kind === "weekly" ? 7 : 1,
+        );
+        const calendar = await new CalendarService(
+          trx,
+          undefined,
+          this.now,
+        ).view(user, range.start, range.end);
+        if (calendar.warning && !doc.assumptions.includes(calendar.warning))
+          doc.assumptions = [...doc.assumptions.slice(0, 19), calendar.warning];
       }
       const status =
         v.operation === "accept"

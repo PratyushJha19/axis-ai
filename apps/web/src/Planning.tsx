@@ -29,6 +29,7 @@ import type {
 } from "../../../packages/shared/src/planning";
 import type { Task } from "../../../packages/shared/src/contracts";
 import { api } from "./api";
+import { Calendar } from "./Calendar";
 type Props = {
   onError: (e: unknown) => void;
   onOpen: (kind: "task" | "project", id: string) => void;
@@ -346,8 +347,8 @@ export function Planning({
             </span>
             <h2 id="brief-heading">Your briefing · {brief.date}</h2>
             <p className="muted">
-              Facts from saved records. Calendar is not connected. Week started{" "}
-              {brief.week_start}.
+              Facts from saved records. Review Calendar freshness below. Week
+              started {brief.week_start}.
             </p>
           </div>
           <button
@@ -450,6 +451,22 @@ export function Planning({
           ))}
         </details>
       </section>
+      <Calendar
+        date={
+          kind === "weekly"
+            ? Temporal.PlainDate.from(date || brief.date)
+                .subtract({
+                  days:
+                    (Temporal.PlainDate.from(date || brief.date).dayOfWeek -
+                      (prefs?.value.first_day ?? 1) +
+                      7) %
+                    7,
+                })
+                .toString()
+            : date || brief.date
+        }
+        onError={onError}
+      />
       {recovery && (
         <section
           ref={recoveryPanel}

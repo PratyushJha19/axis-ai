@@ -1,10 +1,17 @@
 # AXIS — Documentation Pack
 
 **Version:** 1.0  
-**Status:** M5 internal planning and intelligence are implemented; verification is recorded in `docs/m5-results.md`. Notifications default to simulation. Live provider/notification acceptance and full release gates remain open.
+**Status:** M6 Calendar and recovery tooling are implemented locally; verification is recorded in `docs/m6-results.md`. Notifications default to simulation. Live provider acceptance, backup deployment and full release gates remain open.
 **Purpose:** Give a coding agent a single, coherent source of truth for building AXIS in controlled, testable milestones.
 
 ## Start here
+
+**M6 implementation:** Separate read-only Google Calendar consent and cached busy
+periods extend Planning. Migration 012 adds Calendar records and recovery quarantine.
+Operator commands create encrypted PostgreSQL backups and verify isolated restores.
+See [M6 setup and scope](docs/15-m6-calendar-backups-recovery.md) and the
+[recovery runbook](docs/runbooks/disaster-recovery.md). Live Google verification,
+off-machine storage, installed schedules/alerts and production RPO/RTO remain pending.
 
 **M5 planning (2026-10-19):** The Planning page adds daily briefings, explainable
 priorities, daily/weekly drafts, explicit acceptance, history and reminder-aware
@@ -12,7 +19,7 @@ rescheduling. Stop old processes, then `npm run dev` applies migration 011.
 Run `npm run dev:worker` for opted-in proactive alerts; `npm run dev:agent` remains
 separate for agent runs. Configure availability before time blocking. Alerts and AI
 refresh require explicit opt-in. See [M5 operation](docs/14-m5-daily-intelligence-planning.md)
-and [verification](docs/m5-results.md). Calendar remains unavailable; M6 is not started.
+and [verification](docs/m5-results.md). M6 now extends this planner with Calendar.
 
 **Agent runtime (2026-10-18):** Chat includes **Delegate a task** for internal reads
 and M4-gated task/reminder creation. Stop existing processes, then run `npm run dev`
@@ -71,7 +78,7 @@ For local development see [the runbook](docs/runbook.md), [M0 scope and open dec
 2. Read `docs/00-master-context.md`.
 3. Read `docs/01-product-requirements.md` and `docs/02-technical-architecture.md`.
 4. Read the remaining specifications before implementing the corresponding milestone.
-5. Continue one verified milestone at a time. M5 is the current slice; stop for review before M6. Do not build the whole product in one pass.
+5. Continue one verified milestone at a time. M6 is the current slice; stop for review before M7. Do not build the whole product in one pass.
 
 ## Document index
 

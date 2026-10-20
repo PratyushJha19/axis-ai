@@ -13,6 +13,12 @@
     "apps/*"
   ],
   "scripts": {
+    "backup": "node --env-file-if-exists=.env --import tsx scripts/backup.ts create",
+    "backup:verify": "node --env-file-if-exists=.env --import tsx scripts/backup.ts verify",
+    "backup:restore-check": "node --env-file-if-exists=.env --import tsx scripts/backup.ts restore-check",
+    "backup:restore-new": "node --env-file-if-exists=.env --import tsx scripts/backup.ts restore-new",
+    "backup:health": "node --env-file-if-exists=.env --import tsx scripts/backup.ts health",
+    "recovery:quarantine": "node --env-file-if-exists=.env --import tsx scripts/recovery-quarantine.ts",
     "setup:ai": "node scripts/configure-ai.mjs",
     "ai:rotate-keys": "node --env-file-if-exists=.env --import tsx scripts/rotate-ai-keys.ts",
     "dev:api": "node --env-file-if-exists=.env --import tsx services/api/src/main.ts",

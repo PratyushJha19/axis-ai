@@ -127,6 +127,62 @@ export async function multiUserScenarios(
       },
     );
     await t.test(
+      "Calendar API enforces sessions, CSRF, owner isolation, read-only routes and recovery quarantine",
+      async () => {
+        await sql`insert into calendar_connections(user_id,revision,subject,scopes,status,events) values(${idA},${randomUUID()},'fixture',array[]::text[],'connected','[{"id":"private-calendar-event","title":"Private owner commitment","start":"2026-10-20T09:00:00Z","end":"2026-10-20T10:00:00Z","timezone":"UTC","all_day":false,"busy":true}]'::jsonb)`.execute(
+          db,
+        );
+        await request(app).get("/api/v1/calendar/status").expect(401);
+        const own = await a.get("/api/v1/calendar/status").expect(200),
+          foreign = await b.get("/api/v1/calendar/status").expect(200);
+        assert.equal(own.body.events.length, 1);
+        assert.equal(foreign.body.events.length, 0);
+        assert.ok(!("credential" in own.body));
+        await a
+          .post("/api/v1/calendar/connect")
+          .send({ consent: true })
+          .expect(403);
+        await a
+          .post("/api/v1/calendar/connect")
+          .set(headersA)
+          .send({ consent: true, user_id: idB })
+          .expect(400);
+        await a
+          .post("/api/v1/calendar/events")
+          .set(headersA)
+          .send({ title: "Write forbidden" })
+          .expect(401);
+        await a
+          .post("/api/v1/calendar/sync")
+          .set(headersA)
+          .send({ date: "2026-10-20", days: 32 })
+          .expect(400);
+        await b
+          .post("/api/v1/calendar/disconnect")
+          .set(headersB)
+          .send({ confirmed: true })
+          .expect(200);
+        assert.equal(
+          (await a.get("/api/v1/calendar/status")).body.events.length,
+          1,
+        );
+        await sql`update recovery_control set quarantined=true where id=1`.execute(
+          db,
+        );
+        try {
+          await a
+            .post("/api/v1/tasks")
+            .set(headersA)
+            .send({ title: "Held" })
+            .expect(503);
+        } finally {
+          await sql`update recovery_control set quarantined=false where id=1`.execute(
+            db,
+          );
+        }
+      },
+    );
+    await t.test(
       "two sessions cannot read, modify, link or delete each other’s core records",
       async () => {
         const key = randomUUID();

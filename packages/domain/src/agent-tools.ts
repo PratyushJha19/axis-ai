@@ -72,7 +72,7 @@ export const agentTools: ReadonlyMap<string, Tool> = new Map(
   [
     tool(
       "get_daily_briefing",
-      "Read local-day priorities and overdue tasks. No arguments; Calendar/project deadlines are unavailable.",
+      "Read local-day priorities and overdue tasks. No arguments; Calendar event text and project deadlines are not provided by this tool.",
       z.object({}).strict(),
       async ({ db, user }) => {
         const b = await new PlanningService(db).briefing(user);

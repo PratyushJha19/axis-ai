@@ -281,7 +281,28 @@ Record material choices here. Do not silently replace decisions.
   external connectors, deployment or historical analytics expansion.
 - **Evidence:** `../14-m5-daily-intelligence-planning.md`, `../m5-results.md`.
 
-### ADR-XXX — Title
+### ADR-026 — Read-only Calendar cache and operator-controlled recovery
+
+- **Status:** Accepted engineering implementation of the owner's M6 specification,
+  2026-10-20; deployment and live acceptance pending.
+- **Decision:** Separate Google consent with state/PKCE/nonce, database single-use
+  challenges bound to account/session, same verified Google subject, events-readonly
+  scope and primary-calendar reads. Reuse AES-GCM keyring with distinct purpose AAD.
+  Cache complete bounded ranges; fence refresh results against disconnect and
+  reconnection. Existing planner consumes deterministic busy intervals; no calendar
+  text reaches AI, no Calendar write tool exists.
+- **Operations:** PostgreSQL custom dumps under an exported consistent snapshot,
+  whole-artifact AES-GCM with separate operator key, authenticated manifest metadata,
+  checksums, private ACLs and post-verification retention. Restore into a unique local
+  database, compare table counts/schema objects and decrypt credentials. New recovery
+  databases remain quarantined and have sessions/consent challenges invalidated.
+- **Boundary:** No production overwrite, installed scheduler, storage provision,
+  remote alert or live provider call. Seven distinct daily points plus one monthly
+  point are retained as successful history accumulates. RPO/RTO remain targets.
+- **Revisit:** Additional calendars, deployed storage/scheduler/alert provider,
+  broader OAuth account linking or future Calendar writes behind M4.
+
+### ADR template — Title
 
 - **Status:** Proposed / Accepted / Superseded
 - **Date:**

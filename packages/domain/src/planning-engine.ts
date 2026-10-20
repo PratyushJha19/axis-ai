@@ -167,7 +167,7 @@ export function buildPlan(
     timezone: zone,
     entries,
     assumptions: [
-      "Calendar is not connected; only configured availability and recorded blocks are considered.",
+      "Uses configured availability, recorded blocks and available cached Calendar busy periods.",
       ...(!windows.length
         ? ["No working availability configured; tasks remain unscheduled."]
         : []),

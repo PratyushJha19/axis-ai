@@ -45,6 +45,7 @@ try {
     logger.info({ event: "agent_worker_started" });
     while (!controller.signal.aborted) {
       try {
+        await checkDatabase(db);
         await runtime.runOnce();
       } catch {
         logger.warn({ event: "agent_worker_dependency_unavailable" });

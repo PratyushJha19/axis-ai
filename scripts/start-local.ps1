@@ -1,11 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
-$axisPgBin = if ($env:PG_BIN) { $env:PG_BIN } else { 'C:/Program Files/PostgreSQL/18/bin' }
-& "$axisPgBin/pg_ctl.exe" -D .local/pgdata status | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  & "$axisPgBin/pg_ctl.exe" -D .local/pgdata -l .local/postgres.log -o '-h 127.0.0.1 -p 55432' -w start
-  if ($LASTEXITCODE -ne 0) { throw 'Could not start the isolated PostgreSQL cluster. See docs/runbook.md.' }
-}
+& "$PSScriptRoot/start-local-postgres.ps1"
 try {
   npm run db:migrate
   if ($LASTEXITCODE -ne 0) { throw 'Migration failed. Startup stopped.' }

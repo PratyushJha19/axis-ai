@@ -186,7 +186,9 @@ export function App() {
         : new URLSearchParams(window.location.search).get("view") ===
             "approvals"
           ? "Approvals"
-          : "Overview",
+          : new URLSearchParams(window.location.search).has("calendar")
+            ? "Planning"
+            : "Overview",
     ),
     [mobile, setMobile] = useState(false),
     [editor, setEditor] = useState<EditorState | null>(null),

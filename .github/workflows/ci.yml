@@ -25,7 +25,19 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      - name: Use matching PostgreSQL 18 backup clients
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/axis-pg-bin"
+          for tool in pg_dump pg_restore; do
+            cat > "$RUNNER_TEMP/axis-pg-bin/$tool" <<EOF
+          #!/bin/sh
+          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE ${{ job.services.postgres.id }} $tool "\$@"
+          EOF
+            chmod 700 "$RUNNER_TEMP/axis-pg-bin/$tool"
+          done
       - run: npm run test:integration
         env:
           TEST_DATABASE_URL: postgres://axis_ci@127.0.0.1:5432/axis_test_ci
+          PG_BIN: ${{ runner.temp }}/axis-pg-bin
       - run: npm audit --audit-level=high

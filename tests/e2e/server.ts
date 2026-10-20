@@ -12,6 +12,8 @@ import { createLogger } from "../../packages/observability/src/index.js";
 import { createApp } from "../../services/api/src/app.js";
 import { KeyVault } from "../../packages/domain/src/ai-crypto.js";
 import { AIError } from "../../packages/domain/src/ai-provider.js";
+import { CalendarService } from "../../packages/domain/src/calendar.js";
+import { calendarScope } from "../../packages/domain/src/calendar-provider.js";
 import {
   createAuth,
   type IdentityProvider,
@@ -144,6 +146,43 @@ const server = createApp({
   db,
   auth,
   ai: aiRuntime,
+  origin,
+  calendar: new CalendarService(db, {
+    vault: aiRuntime.vault,
+    provider: {
+      async begin() {
+        const state = randomUUID();
+        return {
+          url: `${origin}/api/v1/calendar/callback?state=${state}&code=synthetic`,
+          challenge: { state, nonce: randomUUID(), verifier: randomUUID() },
+        };
+      },
+      async exchange() {
+        return {
+          subject: "synthetic-ui-owner",
+          refresh: "synthetic-calendar-token",
+          scopes: [calendarScope],
+        };
+      },
+      async events(_refresh, start) {
+        const end = new Date(Date.parse(start) + 3600000).toISOString();
+        return [
+          {
+            id: "ui-event",
+            title: "Synthetic Google commitment",
+            start,
+            end,
+            timezone: "UTC",
+            busy: true,
+            all_day: false,
+          },
+        ];
+      },
+      async revoke() {
+        return true;
+      },
+    },
+  }),
   logger: createLogger("silent"),
   checkReady: () => checkDatabase(db),
   webDirectory: resolve("apps/web/dist"),

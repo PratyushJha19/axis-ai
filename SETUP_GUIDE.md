@@ -1,5 +1,48 @@
 # Next Targets:
 
+## M6 Calendar and backup setup — 2026-10-20
+
+1. Stop API and workers before upgrading. `npm run dev` applies migration 012 and
+   starts the dashboard. Continue using `npm run dev:worker` and `npm run dev:agent`
+   in separate terminals as needed. Calendar reads need no additional worker.
+2. In your existing Google Cloud project, enable Google Calendar API. Add
+   `http://localhost:3000/api/v1/calendar/callback` to the web OAuth client's
+   authorized redirect URIs (use your exact APP_ORIGIN for another environment).
+   Keep the existing `/auth/google/callback` URI for sign-in.
+3. Add the Calendar events read-only scope to the consent configuration. For a
+   testing audience, add authorized test users; Google testing/verification and
+   refresh-token lifetime restrictions still apply. Do not request Calendar writes.
+4. Keep existing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SESSION_SECRET, APP_ORIGIN
+   and AI_CREDENTIALS_* encryption settings. `npm run setup:ai` creates the shared
+   server vault key if absent; users do not need a Groq key to connect Calendar.
+5. Sign in, set your IANA timezone, open **Planning**, select read-only consent and
+   **Connect Google Calendar**. Choose the same Google account used for AXIS.
+   Login alone does not grant Calendar access. After returning to Planning,
+   refresh the 14-day range. For weekly plans, the refresh begins at the week start.
+6. Review real commitments and freshness warnings, then generate/review a plan.
+   Busy events block task slots; transparent events do not. Proposed task blocks
+   are saved only in AXIS. Only the primary calendar is supported in M6.
+7. Disconnect removes local tokens/events immediately. Remote revocation is reported
+   separately and can affect other grants for the same Google OAuth client.
+8. Backups are an operator setup, not a dashboard account setting. Configure a
+   private absolute BACKUP_DIRECTORY, separate BACKUP_ENCRYPTION_KEY (32-byte
+   base64), BACKUP_KEY_VERSION and PG_BIN pointing to PostgreSQL 18 binaries.
+   Keep all recovery keys separately protected. See the
+   [complete recovery runbook](docs/runbooks/disaster-recovery.md) for ACLs, retention,
+   scheduling, failure alerts and restoring safely into a new quarantined database.
+9. Run `npm run backup`, `npm run backup:verify`, then
+   `npm run backup:restore-check`. The restore check needs local PostgreSQL and a
+   role permitted to create/drop its own disposable databases. It never overwrites
+   your working DB. `npm run backup:health` checks age and verification evidence.
+10. Review/install the supplied Windows scheduler configuration only when ready.
+    No schedule, off-machine replication or remote alert was activated by this
+    implementation. A sleeping PC does not guarantee daily protection.
+
+Calendar errors: reconnect for revoked/insufficient consent; check redirect URI and
+API enablement for setup failures; wait through the bounded refresh cooldown for
+temporary errors. Cached commitments remain labelled stale. AXIS tasks/reminders
+continue when Calendar is unavailable. See [M6](docs/15-m6-calendar-backups-recovery.md).
+
 ## M5 planning setup — 2026-10-19
 
 1. Stop existing API and workers before upgrading. From `G:\axis-ai`, run

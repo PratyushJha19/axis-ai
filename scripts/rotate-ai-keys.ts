@@ -31,7 +31,27 @@ try {
           trx,
         );
       }
-      return rows.length;
+      const calendar = (
+        await sql<{
+          user_id: string;
+          credential: unknown;
+        }>`select user_id,credential from calendar_connections where credential is not null for update`.execute(
+          trx,
+        )
+      ).rows;
+      for (const row of calendar) {
+        const secret = ai.vault.decrypt(
+          row.credential,
+          row.user_id,
+          "google-calendar",
+        );
+        await sql`update calendar_connections set credential=${JSON.stringify(ai.vault.encrypt(secret, row.user_id, "google-calendar"))}::jsonb where user_id=${row.user_id}`.execute(
+          trx,
+        );
+      }
+      // Pending consent challenges expire; require a fresh flow after rotation.
+      await sql`delete from calendar_challenges`.execute(trx);
+      return rows.length + calendar.length;
     });
     logger.info({ event: "ai_key_rotation_succeeded", count });
   } finally {

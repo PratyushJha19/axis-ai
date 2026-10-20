@@ -1,5 +1,10 @@
 # Local AXIS runbook
 
+**M6 current override:** Schema **12**. Use the new
+[disaster-recovery runbook](runbooks/disaster-recovery.md) for encrypted backups,
+restore checks, quarantine and operator scheduling. Older operational/schema notes
+below are historical. Read-only Calendar setup is in `15-m6-calendar-backups-recovery.md`.
+
 Current schema: **6**, including Telegram migration 006. Stop API/worker before
 upgrade, then use `npm run dev` and `npm run dev:worker`. Current notification
 instructions: [Telegram setup](telegram-setup.md). Older WhatsApp and schema-4
@@ -45,6 +50,19 @@ configured `.env` for axis_dev on port 55432. It is stopped after verification.
 Start that cluster with pg_ctl below; do not run initdb again on it.
 
 ## Database and startup
+
+The Windows launcher starts PostgreSQL only when `pg_ctl status` reports it
+stopped, then waits up to five minutes for readiness. It also waits for an existing
+server that is recovering after an interrupted shutdown. Progress messages appear
+every 15 seconds. The old default 60-second startup wait could expire during normal
+crash recovery.
+
+If startup still times out, inspect `.local/postgres.log` for recovery progress.
+Do not launch another PostgreSQL instance, remove `postmaster.pid`, or reinitialize
+the cluster. Once recovery finishes, run `npm run dev` again. The database-only
+check/start command is `powershell.exe -NoProfile -File scripts/start-local-postgres.ps1`.
+On 2026-10-20, the existing cluster completed recovery in about 100 seconds and
+accepted connections; the updated launcher was verified against that running cluster.
 
 Use an isolated local cluster bound to 127.0.0.1 on a spare port (M0 validation uses
 55432). PostgreSQL binaries on this machine are in

@@ -1,5 +1,11 @@
 # AXIS — Master Context
 
+**2026-10-20 M6 update:** ADR-026 adds separately consented primary Calendar reads,
+encrypted credentials, cached busy constraints, operator-encrypted backups and
+isolated restore/quarantine tooling. Calendar writes remain denied. Operational
+schedules, off-machine storage, live Google acceptance and production recovery
+targets require operator verification. See `15-m6-calendar-backups-recovery.md`.
+
 **2026-10-19 planning update:** ADR-025 adds deterministic daily/weekly plans,
 grounded briefings, optional BYOK advice, explicit reminder-aware task recovery
 and opt-in proactive alerts through the existing worker. Plan acceptance is not

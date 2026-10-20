@@ -13,6 +13,7 @@ import * as approvals from "../migrations/009-approvals.js";
 
 import * as agentRuns from "../migrations/010-agent-runs.js";
 import * as planning from "../migrations/011-planning.js";
+import * as calendar from "../migrations/012-calendar.js";
 
 export function createMigrator(db: Kysely<Database>) {
   return new Migrator({
@@ -30,6 +31,7 @@ export function createMigrator(db: Kysely<Database>) {
         "009-approvals": approvals,
         "010-agent-runs": agentRuns,
         "011-planning": planning,
+        "012-calendar": calendar,
       }),
     },
   });

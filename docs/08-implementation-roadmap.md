@@ -183,6 +183,12 @@ Acceptance:
 
 ## Milestone M6 — Calendar read-only and operational hardening
 
+Implementation and local verification are recorded in
+`15-m6-calendar-backups-recovery.md` and `m6-results.md`. Primary Calendar only;
+read-only explicit consent. Encrypted backup/restore commands and scheduler setup
+are supplied, but no production schedule/storage/live acceptance is claimed.
+Stop for review before M7.
+
 Goal: integrate schedule context and prove recovery.
 
 Tasks:

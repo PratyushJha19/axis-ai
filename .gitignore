@@ -7,4 +7,6 @@ coverage/
 dist/
 tmp/
 *.log
+*.axisbackup
+*.partial
 client_secret_*.json

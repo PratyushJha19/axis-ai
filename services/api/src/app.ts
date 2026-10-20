@@ -6,6 +6,7 @@ import { rateLimit } from "express-rate-limit";
 import { ZodError } from "zod";
 import type { Kysely } from "kysely";
 import type { Database } from "../../../packages/database/src/index.js";
+import { checkRecovery } from "../../../packages/database/src/index.js";
 import { DomainError } from "../../../packages/domain/src/errors.js";
 import type { Auth } from "./auth.js";
 import { productRouter } from "./routes.js";
@@ -21,6 +22,8 @@ import type { MessagingConfig } from "../../../packages/domain/src/notification-
 import { agentRouter } from "./agent-routes.js";
 import { approvalRouter } from "./approval-routes.js";
 import { planningRouter } from "./planning-routes.js";
+import { calendarRouter } from "./calendar-routes.js";
+import { CalendarService } from "../../../packages/domain/src/calendar.js";
 
 export function createApp(dependencies: {
   checkReady: () => Promise<void>;
@@ -30,6 +33,8 @@ export function createApp(dependencies: {
   webDirectory?: string;
   ai?: AIRuntime;
   messaging?: MessagingConfig;
+  calendar?: CalendarService;
+  origin?: string;
 }) {
   const app = express();
   app.disable("x-powered-by");
@@ -108,7 +113,25 @@ export function createApp(dependencies: {
     app.use(
       "/api/v1",
       dependencies.auth.protect,
+      async (_req, _res, next) => {
+        try {
+          await checkRecovery(dependencies.db!);
+          next();
+        } catch {
+          next(
+            new DomainError(
+              "RECOVERY_HOLD",
+              503,
+              "AXIS is held for recovery review. Contact the operator.",
+            ),
+          );
+        }
+      },
       express.json({ limit: "32kb" }),
+      calendarRouter(
+        dependencies.calendar ?? new CalendarService(dependencies.db),
+        dependencies.origin ?? "http://localhost:3000",
+      ),
       notificationRouter(dependencies.db, messaging),
       approvalRouter(dependencies.db),
       agentRouter(dependencies.db),
