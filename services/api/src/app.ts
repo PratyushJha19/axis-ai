@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { ZodError } from "zod";
@@ -168,10 +169,22 @@ export function createApp(dependencies: {
       },
     });
   });
-  if (dependencies.webDirectory) {
+  if (
+    dependencies.webDirectory &&
+    existsSync(resolve(dependencies.webDirectory, "index.html"))
+  ) {
     app.use(express.static(dependencies.webDirectory, { index: false }));
     app.get("/", (_req, res) =>
       res.sendFile(resolve(dependencies.webDirectory!, "index.html")),
+    );
+  } else {
+    app.get("/", (_req, res) =>
+      res.json({
+        service: "AXIS API",
+        message:
+          "Open the Vercel frontend to use AXIS. Check /health/ready for database readiness.",
+        frontend: dependencies.origin ?? null,
+      }),
     );
   }
   app.use((_req, res) => {

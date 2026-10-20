@@ -3,6 +3,26 @@ import test from "node:test";
 import request from "supertest";
 import { createApp } from "../../services/api/src/app.js";
 import { createLogger } from "../../packages/observability/src/index.js";
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
+
+test("API-only hosting serves a useful root without a frontend build", async () => {
+  for (const webDirectory of [undefined, resolve(".local", randomUUID())]) {
+    const app = createApp({
+      logger: createLogger("silent"),
+      checkReady: async () => {
+        throw new Error("synthetic unavailable");
+      },
+      webDirectory,
+      origin: "https://axis-demo.example",
+    });
+    const root = await request(app).get("/").expect(200);
+    assert.equal(root.body.service, "AXIS API");
+    assert.equal(root.body.frontend, "https://axis-demo.example");
+    await request(app).get("/health/ready").expect(503);
+    await request(app).get("/api/v1/tasks").expect(401);
+  }
+});
 
 test("demo status is public but live notification configuration is rejected", async () => {
   const deps = {

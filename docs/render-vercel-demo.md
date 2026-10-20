@@ -64,8 +64,9 @@ temporary readiness failure during database wake-up; retry after it wakes.
 5. Deploy to obtain a stable production address such as
    `https://your-axis-demo.vercel.app`.
 
-At this point API/login will not work: `vercel.json` intentionally contains
-`axis-api-replace-me.onrender.com`. It must be replaced in step 5.
+The current `vercel.json` points to the owner's Render service
+`axis-ai-1nsn.onrender.com`. API/login will work only after that service and its
+environment are ready. For another service, update the destinations in step 5.
 Do not enter database passwords, OAuth secrets or encryption keys into Vercel.
 Never put secrets in `VITE_*` variables.
 
@@ -134,7 +135,7 @@ Copy the Render service URL. Edit the **two** destinations in root `vercel.json`
 replacing only:
 
 ```text
-https://axis-api-replace-me.onrender.com
+https://axis-ai-1nsn.onrender.com
 ```
 
 with your actual Render HTTPS origin. Preserve `/api/:path*` and `/auth/:path*`.
@@ -201,6 +202,13 @@ always-on personal reminder service.
 - [Vercel Hobby usage](https://vercel.com/docs/plans/hobby)
 
 ## Verification results
+
+Follow-up: the API root now returns an informational JSON response when the
+frontend build is absent (as expected on Render). It does not claim database
+readiness; use `/health/ready`. The Vercel rewrite destinations were updated to
+the Render address supplied in the owner's screenshot:
+`https://axis-ai-1nsn.onrender.com`. Commit/push and redeploy both hosts to apply
+these changes. The live Vercel address remains to be supplied/configured.
 
 - `npm run check`: formatting, lint and type checks passed; 48 unit/security
   tests passed. Includes strict host/proxy settings, demo status, rejection of
