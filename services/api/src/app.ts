@@ -38,6 +38,7 @@ export function createApp(dependencies: {
   origin?: string;
   trustProxyHops?: number;
   demoMode?: boolean;
+  freeHostNotifications?: boolean;
 }) {
   const app = express();
   // Enable only behind a host that overwrites forwarding headers (Render).
@@ -90,13 +91,20 @@ export function createApp(dependencies: {
     res.json({
       configured: Boolean(dependencies.auth),
       demoMode: Boolean(dependencies.demoMode),
+      freeHostNotifications: Boolean(
+        dependencies.demoMode && dependencies.freeHostNotifications,
+      ),
     }),
   );
   const messaging = dependencies.messaging || {
     mode: "mock" as const,
     sandbox: true,
   };
-  if (dependencies.demoMode && messaging.mode !== "mock")
+  if (
+    dependencies.demoMode &&
+    !dependencies.freeHostNotifications &&
+    messaging.mode !== "mock"
+  )
     throw new Error("Demo mode requires simulated notifications.");
   if (dependencies.db)
     app.use("/webhooks", notificationWebhooks(dependencies.db, messaging));

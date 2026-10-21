@@ -13,6 +13,7 @@ test("demo workers exit before connecting to a database or provider", async () =
       env: {
         ...process.env,
         DEMO_MODE: "true",
+        FREE_HOST_NOTIFICATIONS: "false",
         DATABASE_URL:
           "postgresql://synthetic:synthetic@127.0.0.1:1/axis_test_demo",
         AI_CREDENTIALS_ENCRYPTION_KEY: "",

@@ -2,7 +2,9 @@
 
 For the selected free Vercel + Render demo, follow
 [the step-by-step hosting guide](docs/render-vercel-demo.md). It uses a new test
-database and does not run reminder or agent workers.
+database and does not run workers by default. To enable Telegram while keeping
+hosting free, follow [free-host Telegram](docs/free-host-telegram.md). The reminder
+worker sleeps with Render; the agent worker remains disabled.
 
 ## M6 Calendar and backup setup — 2026-10-20
 

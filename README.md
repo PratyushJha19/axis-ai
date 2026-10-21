@@ -8,8 +8,10 @@
 
 **Free hosted demo:** Vercel frontend + Render API preparation is in
 [the deployment guide](docs/render-vercel-demo.md). This optional demo disables
-background execution; reminders can be saved but are not delivered. No cloud
-service has been deployed by this change.
+background execution by default. For the owner's optional Telegram setup, follow
+[free-host Telegram](docs/free-host-telegram.md): notifications run only while
+Render is awake and may arrive late. No cloud service is deployed by these scripts
+until the operator commits/configures and redeploys them.
 
 **M6 implementation:** Separate read-only Google Calendar consent and cached busy
 periods extend Planning. Migration 012 adds Calendar records and recovery quarantine.

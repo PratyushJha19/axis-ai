@@ -23,3 +23,24 @@ test("free demo prominently explains unavailable background features", async ({
     page.getByRole("status").filter({ hasText: "Free demo:" }),
   ).toBeVisible();
 });
+
+test("free-host notification mode warns about delayed delivery", async ({
+  page,
+}) => {
+  await page.route("**/auth/status", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      json: {
+        ...(await response.json()),
+        demoMode: true,
+        freeHostNotifications: true,
+      },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("link", { name: "Continue with Google" }).click();
+  const notice = page.getByRole("status").filter({ hasText: "Free hosting:" });
+  await expect(notice).toContainText("Reminders may arrive late");
+  await expect(notice).toContainText("Delegated agent runs remain unavailable");
+});

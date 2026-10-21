@@ -22,7 +22,8 @@ process.on("SIGINT", () => controller.abort());
 process.on("SIGTERM", () => controller.abort());
 try {
   const config = readConfig();
-  if (config.DEMO_MODE) throw new Error("Workers are disabled in demo mode.");
+  if (config.DEMO_MODE && !config.FREE_HOST_NOTIFICATIONS)
+    throw new Error("Workers are disabled in demo mode.");
   logger.level = config.LOG_LEVEL;
   const db = createDatabase(config.DATABASE_URL);
   try {

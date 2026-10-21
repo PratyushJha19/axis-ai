@@ -171,6 +171,7 @@ export async function multiUserScenarios(
             db,
             auth,
             demoMode: true,
+            freeHostNotifications: true,
             logger: createLogger("silent"),
             checkReady: async () => undefined,
           }),

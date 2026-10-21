@@ -13,6 +13,7 @@
     "apps/*"
   ],
   "scripts": {
+    "start:free": "npm run db:migrate && node --env-file-if-exists=.env --import tsx scripts/start-free-host.ts",
     "start:api": "node --env-file-if-exists=.env --import tsx services/api/src/main.ts",
     "start:demo": "npm run db:migrate && npm run start:api",
     "backup": "node --env-file-if-exists=.env --import tsx scripts/backup.ts create",

@@ -1,5 +1,11 @@
 # Free AXIS demo: Vercel + Render
 
+**2026-10-21 optional override:** The owner selected Telegram delivery while the
+free host is awake. Follow [free-host Telegram](free-host-telegram.md) to enable
+it. The worker-free restrictions below describe the default mode without that
+explicit override. The current Blueprint uses `start:free` with notifications
+off by default; `start:demo` remains API-only.
+
 Prepared 2026-10-20. No cloud resource has been created or deployed by this change.
 The owner selected a strictly free dashboard/API demo, without background workers.
 Use synthetic testing records and a new database.

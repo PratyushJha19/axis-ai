@@ -146,6 +146,15 @@ the future approval executor.
 
 # Free demo hosting boundary — 2026-10-20
 
+2026-10-21 override: FREE_HOST_NOTIFICATIONS may explicitly enable the existing
+reminder worker and live notification configuration on the free host. API and
+worker remain separate processes but share host availability/memory. Existing
+per-user channel consent, poll leases, dispatch fences and unknown states remain
+authoritative. Host suspension can cause late notifications and expired linking
+codes; it must never be presented as reliable scheduled delivery. The supervisor
+stops its sibling if either child exits. No keep-alive or agent worker is added.
+This overrides the default worker prohibition below only when enabled.
+
 The optional Vercel/Render demo uses a new database and mock notifications.
 Vercel proxies auth/API requests under one browser origin; credentials stay on
 Render. Host binding and one-hop proxy trust require explicit configuration and

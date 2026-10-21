@@ -1,5 +1,9 @@
 # Telegram notifications for AXIS
 
+For the deployed Vercel/Render free service, use
+[free-host Telegram setup](free-host-telegram.md). Set secrets on Render and use
+the shared-host launcher; the Windows commands below are for local development.
+
 Updated 2026-10-15. Telegram replaces WhatsApp for new reminder deliveries.
 Telegram's standard bot platform is currently free within its limits; this is not
 a promise about future third-party pricing. AXIS explicitly disables paid

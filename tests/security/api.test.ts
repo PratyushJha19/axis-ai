@@ -40,6 +40,20 @@ test("demo status is public but live notification configuration is rejected", as
   assert.equal(createApp(deps).get("trust proxy"), false);
 });
 
+test("free-host notification opt-in permits live configuration and advertises sleep limitations", async () => {
+  const app = createApp({
+    logger: createLogger("silent"),
+    checkReady: async () => undefined,
+    demoMode: true,
+    freeHostNotifications: true,
+    messaging: { mode: "live", sandbox: true },
+  });
+  const status = await request(app).get("/auth/status").expect(200);
+  assert.equal(status.body.freeHostNotifications, true);
+  assert.equal(status.body.demoMode, true);
+  await request(app).post("/api/v1/agent/runs").send({}).expect(401);
+});
+
 test("health, fail-closed API, and private input handling", async () => {
   let logs = "";
   let ready = true;

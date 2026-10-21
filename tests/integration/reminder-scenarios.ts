@@ -435,7 +435,7 @@ export async function reminderScenarios(
     async () => {
       // Real wall clock, local test DB only, no live OAuth/provider values are forwarded.
       const row = await create({ local_due: "2026-01-01T00:00" });
-      const start = () =>
+      const start = (freeHost = false) =>
         spawn(
           process.execPath,
           ["--import", "tsx", "services/worker/src/main.ts"],
@@ -443,6 +443,8 @@ export async function reminderScenarios(
             env: {
               ...process.env,
               DATABASE_URL: connectionString,
+              DEMO_MODE: freeHost ? "true" : "false",
+              FREE_HOST_NOTIFICATIONS: freeHost ? "true" : "false",
               NOTIFICATION_MODE: "mock",
               TELEGRAM_BOT_TOKEN: "",
               RESEND_API_KEY: "",
@@ -475,7 +477,7 @@ export async function reminderScenarios(
           title: "Synthetic restart reminder",
           local_due: "2026-01-01T00:00",
         });
-        child = start();
+        child = start(true);
         await waitFor(second.id);
       } finally {
         if (child.exitCode === null) {

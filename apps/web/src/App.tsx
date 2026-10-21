@@ -181,6 +181,7 @@ export function App() {
     [boot, setBoot] = useState(true),
     [configured, setConfigured] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const [freeHostNotifications, setFreeHostNotifications] = useState(false);
   const [view, setView] = useState<View>(
       new URLSearchParams(window.location.search).get("view") === "reminders"
         ? "Reminders"
@@ -265,6 +266,7 @@ export function App() {
         if (!active) return;
         setConfigured(status.configured);
         setDemoMode(status.demoMode === true);
+        setFreeHostNotifications(status.freeHostNotifications === true);
         if (session) {
           setUser(session.user);
           setCsrf(session.csrfToken);
@@ -698,9 +700,20 @@ export function App() {
         <main className="main-content">
           {demoMode && (
             <p role="status" className="notice">
-              Free demo: reminders can be saved but notifications, automatic
-              archive cleanup, proactive alerts and delegated agent runs do not
-              run. The API may take a minute to wake up. Use test data only.
+              {freeHostNotifications ? (
+                <>
+                  Free hosting: Telegram linking and notifications run only
+                  while the server is awake. Reminders may arrive late after it
+                  wakes. Delegated agent runs remain unavailable.
+                </>
+              ) : (
+                <>
+                  Free demo: reminders can be saved but notifications, automatic
+                  archive cleanup, proactive alerts and delegated agent runs do
+                  not run. The API may take a minute to wake up. Use test data
+                  only.
+                </>
+              )}
             </p>
           )}
           <div

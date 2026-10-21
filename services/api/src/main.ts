@@ -39,6 +39,7 @@ try {
     origin: authConfig?.origin,
     trustProxyHops: config.TRUST_PROXY_HOPS,
     demoMode: config.DEMO_MODE,
+    freeHostNotifications: config.DEMO_MODE && config.FREE_HOST_NOTIFICATIONS,
     calendar: new CalendarService(
       db,
       authConfig && aiConfig

@@ -15,6 +15,10 @@ const configSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+  FREE_HOST_NOTIFICATIONS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
   LOG_LEVEL: z
     .enum(["silent", "error", "warn", "info", "debug"])
     .default("info"),
@@ -27,12 +31,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
     HOST: env.HOST || undefined,
     TRUST_PROXY_HOPS: env.TRUST_PROXY_HOPS || undefined,
     DEMO_MODE: env.DEMO_MODE || undefined,
+    FREE_HOST_NOTIFICATIONS: env.FREE_HOST_NOTIFICATIONS || undefined,
     LOG_LEVEL: env.LOG_LEVEL || undefined,
   });
   if (!parsed.success) {
     // Do not include input values or validation internals: URLs can contain secrets.
     throw new Error(
-      "Invalid configuration. Check DATABASE_URL, PORT, HOST, TRUST_PROXY_HOPS, DEMO_MODE and LOG_LEVEL.",
+      "Invalid configuration. Check DATABASE_URL, PORT, HOST, TRUST_PROXY_HOPS, DEMO_MODE, FREE_HOST_NOTIFICATIONS and LOG_LEVEL.",
     );
   }
   return parsed.data;

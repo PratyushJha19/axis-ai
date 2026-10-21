@@ -318,6 +318,21 @@ Record material choices here. Do not silently replace decisions.
 - **Evidence:** `../render-vercel-demo.md`. Hosted OAuth, proxy behavior, cold
   starts and database recovery require later verification.
 
+### ADR-028 — Optional Telegram worker inside the free web service
+
+- **Status:** Owner accepted free hosting with delayed notifications, 2026-10-21.
+- **Decision:** FREE_HOST_NOTIFICATIONS explicitly overrides the reminder-worker
+  restriction in demo mode. A supervised API and reminder worker share the free
+  Render web service as separate Node processes. The agent worker stays disabled.
+- **Safety:** Telegram linking, explicit per-user delivery consent, database
+  claims/leases and unknown-outcome rules remain unchanged. Defaults stay mock
+  and opt-out. No keep-alive traffic, paid worker or automatic live test is added.
+- **Tradeoff:** Host suspension stops both API and worker. Outbound Telegram
+  polling cannot wake the host. Overdue handling resumes only after it wakes;
+  uptime, punctuality and free database compute capacity are not guaranteed.
+- **Evidence:** `../free-host-telegram.md`; supersedes ADR-027's blanket worker
+  prohibition only for this explicit override.
+
 ### ADR template — Title
 
 - **Status:** Proposed / Accepted / Superseded

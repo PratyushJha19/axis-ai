@@ -27,6 +27,20 @@ test("blank optional template entries use safe defaults", () => {
   assert.equal(config.HOST, "127.0.0.1");
   assert.equal(config.TRUST_PROXY_HOPS, 0);
   assert.equal(config.DEMO_MODE, false);
+  assert.equal(config.FREE_HOST_NOTIFICATIONS, false);
+});
+
+test("free-host notification override requires an explicit boolean", () => {
+  const base = { DATABASE_URL: "postgres://localhost/axis" };
+  assert.equal(
+    readConfig({ ...base, FREE_HOST_NOTIFICATIONS: "true" })
+      .FREE_HOST_NOTIFICATIONS,
+    true,
+  );
+  assert.throws(
+    () => readConfig({ ...base, FREE_HOST_NOTIFICATIONS: "yes" }),
+    /Invalid configuration/,
+  );
 });
 
 test("cloud settings require explicit public binding, bounded proxy trust and strict demo flag", () => {

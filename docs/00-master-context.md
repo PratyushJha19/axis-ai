@@ -1,5 +1,11 @@
 # AXIS — Master Context
 
+**2026-10-21 free-host update:** ADR-028 permits an explicitly enabled Telegram
+reminder worker alongside the API on the free Render web service. The owner
+accepts delayed processing while the host sleeps. Delivery still requires each
+user's linking and consent; agent execution remains disabled in demo mode.
+See `free-host-telegram.md` for configuration and operational limits.
+
 **2026-10-20 M6 update:** ADR-026 adds separately consented primary Calendar reads,
 encrypted credentials, cached busy constraints, operator-encrypted backups and
 isolated restore/quarantine tooling. Calendar writes remain denied. Operational
