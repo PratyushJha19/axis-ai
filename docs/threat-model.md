@@ -1,5 +1,30 @@
 # Initial threat model
 
+## Telegram command boundary (2026-10-21)
+
+Webhook ingress requires a constant-time checked secret, bounded JSON, schema
+readiness and recovery release. Only private non-bot senders whose ID matches the
+chat and a verified bot-specific AXIS link are accepted. Forwarded commands are
+ignored. The owner is never accepted from message text. The inbox is durable and
+deduplicated by bot/update identity; owner locks fence link changes and dispatch.
+Commands bind to the link revision, and replies recheck it before dispatch.
+
+The model receives only a direct natural-language creation request and timezone;
+it cannot approve or execute. Explicit ID-based confirmation reuses M4's immutable
+payload, 24-hour expiry and transactional execution. Narrow internal edits bind
+the target version; deletion and external/high-risk operations remain denied.
+Webhook secret compromise could impersonate linked senders: keep it separate from
+the bot token, rotate both at their source if exposed, and never log headers or
+provider URLs. Telegram account compromise grants this limited linked authority;
+disconnect in the signed-in dashboard to revoke it.
+
+Reply dispatch has a durable sending state. Timeout/crash becomes unknown without
+blind resending. A committed action may succeed even if its reply is unknown;
+inspect the approval ledger before issuing a fresh mutation. Per-user rate limits,
+short input retention, seven-day reply cleanup and no group support limit exposure.
+Free-host sleep and Telegram cold-start retries delay work; they do not grant
+approval or ensure scheduled reminder punctuality.
+
 ## M6 Calendar and recovery (2026-10-20)
 
 Calendar consent is independent from sign-in, with single-use ten-minute database

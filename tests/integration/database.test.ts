@@ -16,6 +16,7 @@ import { aiScenarios } from "./ai-scenarios.js";
 import { multiUserScenarios } from "./multi-user-scenarios.js";
 import { notificationScenarios } from "./notification-scenarios.js";
 import { telegramScenarios } from "./telegram-scenarios.js";
+import { telegramCommandScenarios } from "./telegram-command-scenarios.js";
 import { agentScenarios } from "./agent-scenarios.js";
 import { approvalScenarios } from "./approval-scenarios.js";
 import { chatActionScenarios } from "./chat-action-scenarios.js";
@@ -93,7 +94,7 @@ test("empty PostgreSQL migrates, repeats safely, and persists across connection 
     );
     const first = await createMigrator(db).migrateToLatest();
     assert.equal(first.error, undefined);
-    assert.equal(first.results?.length, 4);
+    assert.equal(first.results?.length, 5);
     const migrated = (
       await sql<{
         status: string;
@@ -158,6 +159,7 @@ test("empty PostgreSQL migrates, repeats safely, and persists across connection 
     await agentScenarios(t, db, connectionString);
     await notificationScenarios(t, db, connectionString);
     await telegramScenarios(t, db);
+    await telegramCommandScenarios(t, db);
     await reminderRetentionScenarios(t, db);
     await planningScenarios(t, db, connectionString);
     await calendarScenarios(t, db);

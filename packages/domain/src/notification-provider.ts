@@ -37,6 +37,8 @@ export interface ChannelAdapter {
   reconcile(id: string, signal: AbortSignal): Promise<DeliveryResult>;
 }
 export interface MessagingConfig {
+  telegramCommands?: boolean;
+  telegramWebhookSecret?: string;
   telegram?: { token: string; botId: string; username: string };
   mode: "mock" | "live";
   sandbox: boolean;
@@ -69,6 +71,15 @@ export function messagingConfig(
     "true";
   const config: MessagingConfig = { mode, sandbox };
   if (mode === "mock") return config;
+  config.telegramCommands =
+    z
+      .enum(["true", "false"])
+      .parse(env.TELEGRAM_COMMANDS_ENABLED || "false") === "true";
+  if (env.TELEGRAM_WEBHOOK_SECRET)
+    config.telegramWebhookSecret = z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{32,256}$/)
+      .parse(env.TELEGRAM_WEBHOOK_SECRET);
   if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_BOT_USERNAME) {
     const token = z
       .string()

@@ -333,6 +333,32 @@ Record material choices here. Do not silently replace decisions.
 - **Evidence:** `../free-host-telegram.md`; supersedes ADR-027's blanket worker
   prohibition only for this explicit override.
 
+### ADR-029 — Linked Telegram commands through the shared approval gate
+
+- **Status:** Accepted implementation under the owner's request, 2026-10-21;
+  permanent deletion explicitly remains in the dashboard.
+- **Decision:** Migration 013 adds durable command/reply queues and link-bound
+  proposal associations. Optional authenticated webhook intake supersedes polling
+  only when configured; startup never registers a webhook. Private direct messages
+  alone can request actions. Explicit commands provide deterministic list/create,
+  task rename/completion and reminder cancellation/next-attempt rescheduling.
+- **Authority:** Reuse the existing approval ledger/digest and execution gate;
+  extend its allowlist with four reversible internal operations and target-version
+  checks. No new external executor or high-risk policy. A Telegram confirmation
+  must match the same owner, bot, chat and current link revision. Approval remains
+  24 hours; no mutation is inferred from a plain yes or model reply.
+- **Runtime:** A separate opt-in command process isolates BYOK interpretation from
+  reminder scheduling. Natural language drafts creation only, with no private
+  context retrieval. Replies are explicitly requested by commands, independently
+  of reminder consent. /stop revokes both access paths.
+- **Recovery:** Duplicate updates cannot repeat effects. Interrupted inference and
+  reply dispatch become unknown without blind retries. Backend state commits with
+  the reply outbox. Text clears on completion; details expire after seven days.
+- **Limits:** Free Render webhook requests can wake the service; punctual scheduled
+  reminders, live acceptance, memory headroom and uptime are not guaranteed.
+  No deployment or provider configuration change is performed by implementation.
+- **Evidence:** `../telegram-commands.md` and `../telegram-commands-results.md`.
+
 ### ADR template — Title
 
 - **Status:** Proposed / Accepted / Superseded

@@ -28,11 +28,59 @@ export const chatEnvelopeSchema = z
   })
   .strict();
 export type ChatDraft = z.infer<typeof chatDraftSchema>;
+// Narrow internal changes use the same immutable approval ledger as creation.
+// The model chat envelope intentionally continues to accept creation only.
+export const changeDraftSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("task"),
+      title: z.string().trim().min(1).max(200),
+      description: z.string().max(1000).default(""),
+      local_due: z.null(),
+      change: z
+        .object({
+          id: z.uuid(),
+          version: z.number().int().positive(),
+          operation: z.enum(["rename", "complete"]),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("reminder"),
+      title: z.string().trim().min(1).max(200),
+      body: z.string().max(1000).default(""),
+      local_due: localTimeSchema.nullable(),
+      recurrence: z.enum(["none", "daily", "weekly"]),
+      change: z
+        .object({
+          id: z.uuid(),
+          version: z.number().int().positive(),
+          operation: z.enum(["cancel", "reschedule"]),
+        })
+        .strict(),
+    })
+    .strict()
+    .refine(
+      (v) => (v.change.operation === "reschedule") === (v.local_due !== null),
+    ),
+]);
+export const approvalDraftSchema = z.union([
+  chatDraftSchema,
+  changeDraftSchema,
+]);
+export function approvalType(payload: z.infer<typeof approvalDraftSchema>) {
+  return `${payload.kind}.${"change" in payload ? payload.change.operation : "create"}`;
+}
 export type ChatAction = {
   id: string;
   request_id: string;
   conversation_id: string;
-  payload: ChatDraft & { timezone: string | null; due_at: string | null };
+  payload: z.infer<typeof approvalDraftSchema> & {
+    timezone: string | null;
+    due_at: string | null;
+  };
   payload_hash: string;
   status:
     | "pending"

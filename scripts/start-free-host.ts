@@ -1,6 +1,7 @@
 import { readConfig } from "../packages/config/src/index.js";
 import { createLogger } from "../packages/observability/src/index.js";
 import { runProcessGroup } from "./process-group.js";
+import { messagingConfig } from "../packages/domain/src/notification-provider.js";
 
 const logger = createLogger();
 try {
@@ -14,6 +15,12 @@ try {
     const commands = [["--import", "tsx", "services/api/src/main.ts"]];
     if (config.FREE_HOST_NOTIFICATIONS)
       commands.push(["--import", "tsx", "services/worker/src/main.ts"]);
+    if (config.FREE_HOST_NOTIFICATIONS && messagingConfig().telegramCommands)
+      commands.push([
+        "--import",
+        "tsx",
+        "services/worker/src/telegram-main.ts",
+      ]);
     logger.info({
       event: "free_host_started",
       notificationWorker: config.FREE_HOST_NOTIFICATIONS,

@@ -4,6 +4,8 @@ import { sql, type Kysely } from "kysely";
 import { validateRequest } from "twilio/lib/webhooks/webhooks.js";
 import { Webhook } from "svix";
 import { rateLimit } from "express-rate-limit";
+import { timingSafeEqual } from "node:crypto";
+import { checkDatabase } from "../../../packages/database/src/index.js";
 import type { Database } from "../../../packages/database/src/index.js";
 import {
   notificationSettings,
@@ -23,6 +25,7 @@ import { DomainError } from "../../../packages/domain/src/errors.js";
 import {
   beginTelegramLink,
   removeTelegram,
+  receiveTelegramUpdate,
 } from "../../../packages/domain/src/telegram.js";
 
 export function notificationRouter(
@@ -51,6 +54,8 @@ export function notificationRouter(
       whatsapp_from: config.twilio?.from || null,
       telegram_configured: !!config.telegram,
       telegram_username: config.telegram?.username || null,
+      telegram_transport: config.telegramWebhookSecret ? "webhook" : "polling",
+      telegram_commands_enabled: Boolean(config.telegramCommands),
       telegram_poll_healthy: config.telegram
         ? (
             await sql<{
@@ -205,6 +210,52 @@ export function notificationWebhooks(
       standardHeaders: "draft-8",
       legacyHeaders: false,
     }),
+  );
+  router.post(
+    "/telegram",
+    express.json({ limit: "32kb" }),
+    async (req, res) => {
+      const expected = config.telegramWebhookSecret;
+      const actual = req.get("x-telegram-bot-api-secret-token") || "";
+      if (
+        config.mode !== "live" ||
+        !config.telegram ||
+        !expected ||
+        Buffer.byteLength(actual) !== Buffer.byteLength(expected) ||
+        !timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
+      )
+        throw new DomainError(
+          "INVALID_SIGNATURE",
+          403,
+          "Invalid webhook authentication.",
+        );
+      try {
+        await checkDatabase(db);
+      } catch {
+        throw new DomainError(
+          "DEPENDENCY_UNAVAILABLE",
+          503,
+          "Service is not ready.",
+        );
+      }
+      const update = z
+        .object({ update_id: z.number().int().nonnegative().safe() })
+        .passthrough()
+        .parse(req.body);
+      await db.transaction().execute(async (trx) => {
+        await receiveTelegramUpdate(
+          trx,
+          config.telegram!.botId,
+          update,
+          new Date(),
+          Boolean(config.telegramCommands),
+        );
+        await sql`insert into telegram_poll_state(bot_id,last_success_at) values (${config.telegram!.botId},now()) on conflict(bot_id) do update set last_success_at=now()`.execute(
+          trx,
+        );
+      });
+      res.json({ ok: true });
+    },
   );
   const form = express.urlencoded({
     extended: false,

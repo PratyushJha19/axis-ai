@@ -111,6 +111,14 @@ export async function backupScenarios(t: TestContext, connection: string) {
     await sql`insert into sessions(sid,sess,expire) values('synthetic-restored-session','{}'::json,now()+interval '1 day')`.execute(
       db,
     );
+    const commandId = randomUUID(),
+      linkRevision = randomUUID();
+    await sql`insert into telegram_commands(id,bot_id,update_id,user_id,destination,link_revision,input) values (${commandId},'99999',1,${owner},'12345',${linkRevision},'/help')`.execute(
+      db,
+    );
+    await sql`insert into telegram_command_replies(id,user_id,bot_id,destination,link_revision,body) values (${commandId},${owner},'99999','12345',${linkRevision},'Synthetic reply')`.execute(
+      db,
+    );
     let id = "";
     await t.test(
       "real PostgreSQL backup is encrypted, checksummed, readable and restores records and credentials in isolation",
@@ -212,7 +220,7 @@ export async function backupScenarios(t: TestContext, connection: string) {
         try {
           await assert.rejects(createBackup(config));
         } finally {
-          await sql`update foundation_metadata set schema_version=12 where id=1`.execute(
+          await sql`update foundation_metadata set schema_version=13 where id=1`.execute(
             db,
           );
         }
@@ -236,6 +244,26 @@ export async function backupScenarios(t: TestContext, connection: string) {
         const target = createDatabase(targetUrl.href);
         try {
           await assert.rejects(checkDatabase(target));
+          assert.equal(
+            (
+              await sql<{
+                status: string;
+              }>`select status from telegram_commands where id=${commandId}`.execute(
+                target,
+              )
+            ).rows[0]!.status,
+            "unknown",
+          );
+          assert.equal(
+            (
+              await sql<{
+                status: string;
+              }>`select status from telegram_command_replies where id=${commandId}`.execute(
+                target,
+              )
+            ).rows[0]!.status,
+            "unknown",
+          );
           assert.equal(
             (
               await sql<{

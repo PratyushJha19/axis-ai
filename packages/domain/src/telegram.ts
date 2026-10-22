@@ -9,6 +9,7 @@ import {
 } from "./notifications.js";
 import { DomainError } from "./errors.js";
 import { audit } from "./records.js";
+import { enqueueTelegramCommand } from "./telegram-commands.js";
 
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -54,12 +55,13 @@ const messageSchema = z.object({
   chat: z.object({ id: positiveId, type: z.literal("private") }),
   text: z.string().max(4096),
 });
-// Called only inside the fenced polling transaction; never exposed as a public webhook.
+// Called inside a transaction, after fenced polling or authenticated webhook ingress.
 export async function receiveTelegramUpdate(
   db: NotificationDB,
   botId: string,
   update: unknown,
   now: Date,
+  commands = false,
 ) {
   const envelope = z
     .object({
@@ -74,7 +76,7 @@ export async function receiveTelegramUpdate(
     destination = String(message.chat.id);
   const link = /^\/start ([a-f0-9]{48})$/.exec(message.text.trim());
   const stop = /^(\/stop|stop)$/i.test(message.text.trim());
-  if (!link && !stop) return;
+  if (!link && !stop && !commands) return;
   const owner = (
     await (
       link
@@ -90,6 +92,21 @@ export async function receiveTelegramUpdate(
   await sql`select id from users where id=${owner.user_id} for update`.execute(
     db,
   );
+  if (!link && !stop) {
+    // Forwarded content is not an instruction from the linked owner.
+    const raw = envelope.data.message as Record<string, unknown>;
+    if (raw.forward_origin || raw.forward_from || raw.via_bot) return;
+    await enqueueTelegramCommand(
+      db,
+      botId,
+      envelope.data.update_id,
+      owner.user_id,
+      destination,
+      message.text,
+      now,
+    );
+    return;
+  }
   if (
     !(
       await sql`insert into notification_events(provider,event_id) values ('telegram',${`${botId}:${envelope.data.update_id}`}) on conflict do nothing returning event_id`.execute(

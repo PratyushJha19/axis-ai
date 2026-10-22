@@ -4,13 +4,14 @@ import { sql, type Kysely } from "kysely";
 import { z } from "zod";
 import type { Database } from "../../database/src/index.js";
 import {
-  chatDraftSchema,
+  approvalDraftSchema,
+  approvalType,
   chatEnvelopeSchema,
   type ChatAction,
 } from "../../shared/src/chat-actions.js";
 import { localToUtc } from "./reminder-time.js";
-import { audit, saveRecord } from "./records.js";
-import { saveReminder } from "./reminders.js";
+import { audit, saveRecord, getRecord } from "./records.js";
+import { saveReminder, cancelReminder, snoozeReminder } from "./reminders.js";
 import { actionPolicy } from "./action-policy.js";
 import { DomainError } from "./errors.js";
 
@@ -187,7 +188,7 @@ export async function operateApproval(
       await audit(trx, user, `action_${status}`, id, correlation);
       return result(status);
     }
-    actionPolicy(`${row.payload.kind}.create`, row.policy_version);
+    actionPolicy(approvalType(row.payload), row.policy_version);
     if (operation === "execute" && row.status !== "approved")
       throw new DomainError(
         "APPROVAL_REQUIRED",
@@ -217,7 +218,7 @@ export async function operateApproval(
     }
     if (operation === "approve") return result("approved");
     const { timezone, due_at, ...draftFields } = row.payload;
-    const draft = chatDraftSchema.parse(draftFields);
+    const draft = approvalDraftSchema.parse(draftFields);
     if (draft.local_due) {
       const profile = (
         await sql<{
@@ -261,35 +262,72 @@ export async function operateApproval(
     await sql`savepoint action_effect`.execute(trx);
     let record: { id: string };
     try {
-      record =
-        draft.kind === "task"
-          ? await saveRecord(
-              trx,
-              "tasks",
-              user,
-              {
-                title: draft.title,
-                description: draft.description,
-                due_at,
-                due_timezone: timezone,
-              },
-              correlation,
-              { key: id },
-            )
-          : await saveReminder(
-              trx,
-              user,
-              {
-                title: draft.title,
-                body: draft.body,
-                local_due: draft.local_due,
-                timezone,
-                recurrence: draft.recurrence,
-                confirmed: true,
-              },
-              correlation,
-              { key: id },
-            );
+      if ("change" in draft) {
+        const change = draft.change;
+        if (draft.kind === "task") {
+          const old = await getRecord(trx, "tasks", user, change.id);
+          record = await saveRecord(
+            trx,
+            "tasks",
+            user,
+            {
+              title: change.operation === "rename" ? draft.title : old.title,
+              description: old.description,
+              status:
+                change.operation === "complete" ? "completed" : old.status,
+              priority: old.priority,
+              project_id: old.project_id,
+              due_at: old.due_at ? new Date(old.due_at).toISOString() : null,
+              due_timezone: old.due_timezone,
+              estimated_minutes: old.estimated_minutes,
+              archived: old.archived_at !== null,
+            },
+            correlation,
+            { id: change.id, version: change.version },
+          );
+        } else {
+          await (change.operation === "cancel"
+            ? cancelReminder(trx, user, change.id, change.version, correlation)
+            : snoozeReminder(
+                trx,
+                user,
+                change.id,
+                change.version,
+                new Date(due_at!),
+                correlation,
+              ));
+          record = { id: change.id };
+        }
+      } else
+        record =
+          draft.kind === "task"
+            ? await saveRecord(
+                trx,
+                "tasks",
+                user,
+                {
+                  title: draft.title,
+                  description: draft.description,
+                  due_at,
+                  due_timezone: timezone,
+                },
+                correlation,
+                { key: id },
+              )
+            : await saveReminder(
+                trx,
+                user,
+                {
+                  title: draft.title,
+                  body: draft.body,
+                  local_due: draft.local_due,
+                  timezone,
+                  recurrence: draft.recurrence,
+                  confirmed: true,
+                },
+                correlation,
+                { key: id },
+              );
     } catch (error) {
       await sql`rollback to savepoint action_effect`.execute(trx);
       const code = error instanceof DomainError ? error.code : "ACTION_FAILED";

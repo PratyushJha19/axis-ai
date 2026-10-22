@@ -14,6 +14,7 @@ export class TelegramPoller {
     readonly bot: NonNullable<MessagingConfig["telegram"]>,
     readonly fetcher: typeof fetch = fetch,
     readonly clock: () => Date = () => new Date(),
+    readonly commands = false,
   ) {}
   async runOnce() {
     const now = this.clock(),
@@ -85,6 +86,7 @@ export class TelegramPoller {
             this.bot.botId,
             update,
             this.clock(),
+            this.commands,
           );
           offset = update.update_id + 1;
         }

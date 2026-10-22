@@ -1,5 +1,10 @@
 # AXIS — Master Context
 
+**2026-10-21 Telegram command slice:** ADR-029 adds optional private linked-chat
+commands and authenticated webhook intake, with a separate command worker.
+Creation and four narrow internal changes use the shared approval ledger. The
+owner chose permanent deletion in the dashboard. See `telegram-commands.md`.
+
 **2026-10-21 free-host update:** ADR-028 permits an explicitly enabled Telegram
 reminder worker alongside the API on the free Render web service. The owner
 accepts delayed processing while the host sleeps. Delivery still requires each

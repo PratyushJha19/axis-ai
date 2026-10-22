@@ -40,8 +40,16 @@ try {
     // Historical WhatsApp records remain inspectable, but this runtime cannot send via Twilio.
     messaging.twilio = undefined;
     const poller =
-      messaging.mode === "live" && messaging.telegram
-        ? new TelegramPoller(db, messaging.telegram)
+      messaging.mode === "live" &&
+      messaging.telegram &&
+      !messaging.telegramWebhookSecret
+        ? new TelegramPoller(
+            db,
+            messaging.telegram,
+            fetch,
+            () => new Date(),
+            Boolean(messaging.telegramCommands),
+          )
         : undefined;
     let pollHealthy: boolean | undefined;
     const delivery =

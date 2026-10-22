@@ -1,5 +1,10 @@
 # AXIS — Documentation Pack
 
+**Telegram commands:** [Setup and usage](docs/telegram-commands.md) covers the
+optional linked-account command worker, webhook setup, task/reminder previews and
+confirmation. Permanent deletion stays in the dashboard. See the verification
+report before deployment.
+
 **Version:** 1.0  
 **Status:** M6 Calendar and recovery tooling are implemented locally; verification is recorded in `docs/m6-results.md`. Notifications default to simulation. Live provider acceptance, backup deployment and full release gates remain open.
 **Purpose:** Give a coding agent a single, coherent source of truth for building AXIS in controlled, testable milestones.

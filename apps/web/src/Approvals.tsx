@@ -236,8 +236,12 @@ export function Approvals({ onError }: { onError: (error: unknown) => void }) {
                   {reminder ? <BellRing size={16} /> : <ListTodo size={16} />}
                 </span>
                 <h3>
-                  {reminder ? "Create reminder" : "Create task"}:{" "}
-                  {item.payload.title}
+                  {"change" in payload
+                    ? `${payload.change.operation} ${payload.kind}`
+                    : reminder
+                      ? "Create reminder"
+                      : "Create task"}
+                  : {item.payload.title}
                 </h3>
                 <span className="approval-status">
                   <span className="sr-only">Status: </span>
@@ -255,6 +259,14 @@ export function Approvals({ onError }: { onError: (error: unknown) => void }) {
                     {schedule(item.payload.local_due, item.payload.timezone)}
                   </dd>
                 </div>
+                {"change" in payload && (
+                  <div>
+                    <dt>Target</dt>
+                    <dd>
+                      {payload.change.id} · version {payload.change.version}
+                    </dd>
+                  </div>
+                )}
                 {payload.kind === "reminder" && (
                   <div>
                     <dt>Repeats</dt>

@@ -1,5 +1,9 @@
 # Next Targets:
 
+For Telegram task/reminder commands, follow [the complete Telegram command setup](docs/telegram-commands.md).
+It includes Render variables, one-time webhook registration, linking, commands,
+confirmation and optional BotFather menus.
+
 For the selected free Vercel + Render demo, follow
 [the step-by-step hosting guide](docs/render-vercel-demo.md). It uses a new test
 database and does not run workers by default. To enable Telegram while keeping

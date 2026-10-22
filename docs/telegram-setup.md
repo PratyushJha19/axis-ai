@@ -1,5 +1,9 @@
 # Telegram notifications for AXIS
 
+For task/reminder commands and webhook mode, follow
+[Telegram command setup](telegram-commands.md). Polling instructions below apply
+when TELEGRAM_WEBHOOK_SECRET is unset.
+
 For the deployed Vercel/Render free service, use
 [free-host Telegram setup](free-host-telegram.md). Set secrets on Render and use
 the shared-host launcher; the Windows commands below are for local development.

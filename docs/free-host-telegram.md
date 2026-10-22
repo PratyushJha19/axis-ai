@@ -1,5 +1,9 @@
 # Telegram on free Render hosting
 
+For incoming task/reminder commands and webhook wake-up, use the newer
+[Telegram command setup](telegram-commands.md). The polling-only instructions
+below remain valid when no webhook secret is configured.
+
 Updated 2026-10-21. The owner accepted delayed notifications on free hosting.
 This is an optional override of the worker-free demo, not an always-on service.
 No paid worker or keep-alive service is introduced.

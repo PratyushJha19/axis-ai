@@ -2,6 +2,30 @@ import { DomainError } from "./errors.js";
 
 export const ACTION_POLICY_VERSION = "m4-internal-v1";
 const registry = {
+  "task.rename": {
+    name: "Rename task",
+    resource: "tasks",
+    permission: "tasks:update",
+    risk: "B",
+  },
+  "task.complete": {
+    name: "Complete task",
+    resource: "tasks",
+    permission: "tasks:update",
+    risk: "B",
+  },
+  "reminder.cancel": {
+    name: "Cancel reminder",
+    resource: "reminders",
+    permission: "reminders:update",
+    risk: "B",
+  },
+  "reminder.reschedule": {
+    name: "Reschedule reminder",
+    resource: "reminders",
+    permission: "reminders:update",
+    risk: "B",
+  },
   "task.create": {
     name: "Create task",
     resource: "tasks",

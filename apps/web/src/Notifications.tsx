@@ -16,6 +16,8 @@ type Setup = {
   email_configured: boolean;
   telegram_username: string | null;
   telegram_poll_healthy: boolean;
+  telegram_transport?: "webhook" | "polling";
+  telegram_commands_enabled?: boolean;
 };
 export function Notifications({
   onError,
@@ -133,9 +135,11 @@ export function Notifications({
         <h3>Your Telegram account</h3>
         {setup.mode === "live" && setup.telegram_configured && (
           <p className="help">
-            {setup.telegram_poll_healthy
-              ? "Telegram connection is receiving updates."
-              : "Waiting for Telegram polling. Start the worker and refresh; check its connection if this persists."}
+            {setup.telegram_transport === "webhook"
+              ? "Webhook mode: send /help to the linked bot to check command delivery. An idle connection does not indicate a failure."
+              : setup.telegram_poll_healthy
+                ? "Telegram connection is receiving updates."
+                : "Waiting for Telegram polling. Start the worker and refresh; check its connection if this persists."}
           </p>
         )}
         <p className="help">
@@ -144,6 +148,15 @@ export function Notifications({
           private chat. The worker must be running. Linking does not enable
           sends until you save consent.
         </p>
+        {setup.telegram_commands_enabled && (
+          <p className="help">
+            Linked private chats can request task/reminder commands and receive
+            replies. Send /help. Changes require /confirm with the action ID;
+            deletion stays in AXIS. Sending /stop revokes this access.
+            Natural-language requests use your saved AI provider and may use its
+            quota.
+          </p>
+        )}
         <button
           className="secondary"
           disabled={busy || !setup.telegram_configured}

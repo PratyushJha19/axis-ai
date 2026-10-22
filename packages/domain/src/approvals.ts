@@ -4,13 +4,15 @@ import { sql, type Kysely } from "kysely";
 import { z } from "zod";
 import type { Database } from "../../database/src/index.js";
 import {
-  chatDraftSchema,
+  approvalDraftSchema,
+  approvalType,
   type ChatAction,
 } from "../../shared/src/chat-actions.js";
 import { ACTION_POLICY_VERSION, actionPolicy } from "./action-policy.js";
 import { payloadHash } from "./chat-actions.js";
 import { localToUtc } from "./reminder-time.js";
-import { audit } from "./records.js";
+import { audit, getRecord } from "./records.js";
+import { getReminder } from "./reminders.js";
 import { DomainError } from "./errors.js";
 
 export { operateApproval } from "./chat-actions.js";
@@ -45,12 +47,12 @@ export async function proposeAction(
     .object({
       idempotency_key: z.uuid(),
       action_type: z.string().min(1).max(100),
-      payload: chatDraftSchema,
+      payload: approvalDraftSchema,
     })
     .strict()
     .parse(raw);
   actionPolicy(input.action_type);
-  if (input.action_type !== `${input.payload.kind}.create`)
+  if (input.action_type !== approvalType(input.payload))
     throw new DomainError(
       "VALIDATION_ERROR",
       400,
@@ -72,7 +74,7 @@ export async function proposeAction(
     if (prior) {
       const { timezone: _timezone, due_at: _due, ...draft } = prior.payload;
       if (
-        JSON.stringify(chatDraftSchema.parse(draft)) !==
+        JSON.stringify(approvalDraftSchema.parse(draft)) !==
         JSON.stringify(input.payload)
       )
         throw new DomainError(
@@ -81,6 +83,22 @@ export async function proposeAction(
           "This request key belongs to a different action.",
         );
       return prior;
+    }
+    if ("change" in input.payload) {
+      const change = input.payload.change;
+      const target =
+        input.payload.kind === "task"
+          ? await getRecord(trx, "tasks", user, change.id)
+          : await getReminder(trx, user, change.id);
+      if (
+        target.version !== change.version ||
+        (change.operation !== "rename" && target.title !== input.payload.title)
+      )
+        throw new DomainError(
+          "CONFLICT",
+          409,
+          "The target changed. Request a new preview.",
+        );
     }
     const timezone = input.payload.local_due ? profile.timezone : null;
     if (input.payload.local_due && !timezone)

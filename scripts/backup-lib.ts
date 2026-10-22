@@ -29,7 +29,7 @@ const metadata = z
   .object({
     id: z.uuid(),
     created_at: z.iso.datetime(),
-    schema: z.literal(12),
+    schema: z.union([z.literal(12), z.literal(13)]),
     schema_hash: z.string().regex(/^[a-f0-9]{64}$/),
     format: z.literal("pg-custom-aes256gcm-v1"),
     counts: z.record(
@@ -305,7 +305,8 @@ export async function createBackup(c: BackupConfig, now = new Date()) {
         "select schema_version from foundation_metadata where id=1",
       )
     ).rows[0]?.schema_version;
-    if (schema !== 12) throw new BackupFailure("backup_schema_incompatible");
+    if (schema !== 12 && schema !== 13)
+      throw new BackupFailure("backup_schema_incompatible");
     const snapshot = (
       await client.query<{ snapshot: string }>(
         "select pg_export_snapshot() snapshot",
@@ -493,6 +494,18 @@ export async function restoreCheck(
       await db.query("delete from sessions");
       await db.query("delete from oauth_challenges");
       await db.query("delete from calendar_challenges");
+      if (m.schema >= 13) {
+        // A snapshot cannot prove which commands/replies ran after it was taken.
+        await db.query(
+          "update telegram_commands set status='unknown',input='',lease_until=null where status in ('queued','processing')",
+        );
+        await db.query(
+          "update telegram_command_replies set status='unknown',lease_until=null where status in ('queued','sending')",
+        );
+        await db.query(
+          "update telegram_command_proposals set link_revision=gen_random_uuid()",
+        );
+      }
       await db.query("commit");
     }
     result = {
