@@ -40,6 +40,7 @@ export const taskSchema = z
       .default("inbox"),
     priority: z.enum(["low", "normal", "high", "critical"]).default("normal"),
     project_id: projectId,
+    deadline_reminders: z.boolean().optional(),
     due_at: z.iso.datetime({ offset: true }).nullable().default(null),
     due_timezone: timezoneSchema.nullable().default(null),
     estimated_minutes: z
@@ -91,6 +92,18 @@ export const listSchema = z
     q: z.string().trim().max(200).default(""),
     archived: z.enum(["false", "true", "all"]).default("false"),
     project_id: z.uuid().optional(),
+    status: z
+      .enum([
+        "inbox",
+        "planned",
+        "in_progress",
+        "blocked",
+        "completed",
+        "cancelled",
+        "deferred",
+      ])
+      .optional(),
+    overdue: z.enum(["true"]).optional(),
   })
   .strict();
 

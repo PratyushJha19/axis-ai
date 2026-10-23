@@ -48,6 +48,9 @@ import { api, ApiError, setCsrf } from "./api";
 import { Reminders } from "./Reminders";
 import { AISettings, AIChat } from "./AI";
 import { Approvals } from "./Approvals";
+import { ProjectWorkspace } from "./ProjectWorkspace";
+import { CanvasPage } from "./CanvasLoader";
+import { Temporal } from "@js-temporal/polyfill";
 const LazyPlanning = lazy(() =>
   import("./Planning").then((module) => ({ default: module.Planning })),
 );
@@ -74,6 +77,8 @@ type View =
   | "Planning"
   | "Tasks"
   | "Projects"
+  | "Project"
+  | "Canvas"
   | "Memory"
   | "Reminders"
   | "Approvals"
@@ -86,6 +91,8 @@ const labels: Record<View, string> = {
   Planning: "Planning",
   Tasks: "Tasks",
   Projects: "Projects",
+  Project: "Project workspace",
+  Canvas: "Canvas",
   Memory: "Memory",
   Reminders: "Reminders",
   Chat: "Ask AXIS",
@@ -102,7 +109,7 @@ const settingsViews: View[] = [
 ];
 type Kind = "task" | "project" | "memory";
 type RecordItem = Task | Project | Memory;
-type EditorState = { kind: Kind; record?: RecordItem };
+type EditorState = { kind: Kind; record?: RecordItem; projectId?: string };
 type Page<T> = { items: T[]; hasMore: boolean };
 const endpoint = { task: "tasks", project: "projects", memory: "memories" };
 const deviceZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -118,10 +125,13 @@ function date(value: string | null, zone: string | null) {
       }).format(new Date(value))
     : "No due date";
 }
-function localInput(value: string | null) {
+function localInput(value: string | null, zone = deviceZone) {
   if (!value) return "";
-  const d = new Date(value);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return Temporal.Instant.from(value)
+    .toZonedDateTimeISO(zone)
+    .toPlainDateTime()
+    .toString()
+    .slice(0, 16);
 }
 function taskPayload(task: Task) {
   return {
@@ -176,6 +186,7 @@ function Empty({
 }
 
 export function App() {
+  const [openProject, setOpenProject] = useState<string | null>(null);
   const [planningDirty, setPlanningDirty] = useState(false);
   const [user, setUser] = useState<Profile | null>(null),
     [boot, setBoot] = useState(true),
@@ -196,16 +207,16 @@ export function App() {
     [editor, setEditor] = useState<EditorState | null>(null),
     [dock, setDock] = useState(() => {
       try {
-        return localStorage.getItem("axis.agentDock") !== "closed";
+        return localStorage.getItem("axis.agentDock") === "open";
       } catch {
-        return true;
+        return false;
       }
     });
   const [settingsOpen, setSettingsOpen] = useState(() => {
     try {
       return localStorage.getItem("axis.settingsNav") !== "closed";
     } catch {
-      return true;
+      return false;
     }
   });
   const toggleSettings = (open: boolean) => {
@@ -301,6 +312,10 @@ export function App() {
         });
         if (view === "Tasks" && projectFilter)
           params.set("project_id", projectFilter);
+        if (view === "Tasks" && filter === "overdue")
+          params.set("overdue", "true");
+        else if (view === "Tasks" && filter !== "all")
+          params.set("status", filter);
         const current =
           view === "Memory"
             ? "memories"
@@ -336,7 +351,17 @@ export function App() {
       active = false;
       clearTimeout(timer);
     };
-  }, [user, view, query, archived, offset, projectFilter, refresh, fail]);
+  }, [
+    user,
+    view,
+    query,
+    archived,
+    offset,
+    projectFilter,
+    filter,
+    refresh,
+    fail,
+  ]);
   useEffect(() => {
     if (!user || view !== "Overview") return;
     let active = true;
@@ -361,7 +386,11 @@ export function App() {
     };
   }, [user, view, refresh]);
   function navigate(next: View) {
-    if (planningDirty && !window.confirm("Discard unsaved plan edits?")) return;
+    if (
+      planningDirty &&
+      !window.confirm("Leave this page and discard unsaved changes?")
+    )
+      return;
     setPlanningDirty(false);
     setView(next);
     setQuery("");
@@ -371,7 +400,15 @@ export function App() {
     setProjectFilter("");
     setMobile(false);
   }
-  function saved() {
+  function saved(record?: RecordItem) {
+    if (editor?.kind === "project" && record && "name" in record) {
+      setOpenProject(record.id);
+      setView("Project");
+      setProjectOptions((items) => [
+        record,
+        ...items.filter((p) => p.id !== record.id),
+      ]);
+    }
     setEditor(null);
     setNotice("Saved to AXIS.");
     setRefresh((n) => n + 1);
@@ -584,6 +621,7 @@ export function App() {
               [Clock3, "Planning"],
               [ListTodo, "Tasks"],
               [Folder, "Projects"],
+              [Brain, "Canvas"],
               [Brain, "Memory"],
               [BellRing, "Reminders"],
               [Sparkles, "Chat"],
@@ -591,7 +629,7 @@ export function App() {
           ).map(([Icon, key]) => (
             <button
               key={key}
-              className={`nav-${key.toLowerCase()} ${view === key ? "active" : ""}`}
+              className={`nav-${key.toLowerCase()} ${view === key || (key === "Projects" && view === "Project") ? "active" : ""}`}
               onClick={() => navigate(key)}
             >
               <span className="nav-icon">
@@ -691,7 +729,14 @@ export function App() {
             </span>
             <button
               className="primary small"
-              onClick={() => setEditor({ kind: "task" })}
+              onClick={() =>
+                setEditor({
+                  kind: "task",
+                  ...(view === "Project" && openProject
+                    ? { projectId: openProject }
+                    : {}),
+                })
+              }
             >
               <Plus size={16} /> New task
             </button>
@@ -717,7 +762,7 @@ export function App() {
             </p>
           )}
           <div
-            className={`page-heading ${view === "Overview" ? "sr-only" : ""}`}
+            className={`page-heading ${view === "Overview" || view === "Project" ? "sr-only" : ""}`}
           >
             <div>
               <div className="eyebrow">
@@ -761,6 +806,8 @@ export function App() {
               view !== "Settings" &&
               view !== "Reminders" &&
               view !== "Notifications" &&
+              view !== "Project" &&
+              view !== "Canvas" &&
               view !== "Approvals" && (
                 <button
                   className="secondary"
@@ -838,70 +885,13 @@ export function App() {
                       )}
                     </div>
                   </div>
-                  <ProgressRing value={doneRate} size={92} stroke={8}>
+                  <ProgressRing value={doneRate} size={72} stroke={7}>
                     <strong>
                       <CountUp value={Math.round(doneRate * 100)} />%
                     </strong>
                     <small>complete</small>
                   </ProgressRing>
                 </section>
-                <div className="stat-tiles">
-                  {(
-                    [
-                      [
-                        ListTodo,
-                        "Open tasks",
-                        stats.active_tasks,
-                        "Tasks",
-                        "blue",
-                      ],
-                      [
-                        CheckCircle2,
-                        "Completed",
-                        stats.completed_tasks,
-                        "Tasks",
-                        "green",
-                      ],
-                      [
-                        Folder,
-                        "Projects",
-                        stats.projects,
-                        "Projects",
-                        "violet",
-                      ],
-                      [Brain, "Memories", stats.memories, "Memory", "teal"],
-                    ] as const
-                  ).map(([Icon, label, count, target, tone]) => (
-                    <button
-                      key={label}
-                      className={`stat-tile tone-${tone}`}
-                      onClick={() => navigate(target)}
-                    >
-                      <span className="stat-tile-icon">
-                        <Icon size={18} />
-                      </span>
-                      <strong>
-                        <CountUp value={count} />
-                      </strong>
-                      <span>{label}</span>
-                    </button>
-                  ))}
-                </div>
-                {user.timezone && (
-                  <Planning
-                    compact
-                    revision={refresh}
-                    onError={fail}
-                    onExpand={() => navigate("Planning")}
-                    onOpen={(kind, id) => {
-                      void api<Task | Project>(
-                        `/${kind === "task" ? "tasks" : "projects"}/${id}`,
-                      )
-                        .then((record) => setEditor({ kind, record }))
-                        .catch(fail);
-                    }}
-                  />
-                )}
                 <section className="panel overview-card">
                   <div className="section-title">
                     <h2>Up next</h2>
@@ -1012,9 +1002,10 @@ export function App() {
                           key={p.id}
                           className="mini-card project-card"
                           style={{ "--hue": hue(p.id) } as CSSProperties}
-                          onClick={() =>
-                            setEditor({ kind: "project", record: p })
-                          }
+                          onClick={() => (
+                            setOpenProject(p.id),
+                            navigate("Project")
+                          )}
                         >
                           <span className="mini-card-icon">
                             <Folder size={15} />
@@ -1037,6 +1028,63 @@ export function App() {
                       )}
                     </div>
                   </section>
+                </div>
+                {user.timezone && (
+                  <Planning
+                    compact
+                    revision={refresh}
+                    onError={fail}
+                    onExpand={() => navigate("Planning")}
+                    onOpen={(kind, id) => {
+                      void api<Task | Project>(
+                        `/${kind === "task" ? "tasks" : "projects"}/${id}`,
+                      )
+                        .then((record) => setEditor({ kind, record }))
+                        .catch(fail);
+                    }}
+                  />
+                )}
+                <div className="stat-tiles">
+                  {(
+                    [
+                      [
+                        ListTodo,
+                        "Open tasks",
+                        stats.active_tasks,
+                        "Tasks",
+                        "blue",
+                      ],
+                      [
+                        CheckCircle2,
+                        "Completed",
+                        stats.completed_tasks,
+                        "Tasks",
+                        "green",
+                      ],
+                      [
+                        Folder,
+                        "Projects",
+                        stats.projects,
+                        "Projects",
+                        "violet",
+                      ],
+                      [Brain, "Memories", stats.memories, "Memory", "teal"],
+                    ] as const
+                  ).map(([Icon, label, count, target, tone]) => (
+                    <button
+                      key={label}
+                      className={`stat-tile tone-${tone}`}
+                      onClick={() => navigate(target)}
+                    >
+                      <span className="stat-tile-icon">
+                        <Icon size={18} />
+                      </span>
+                      <strong>
+                        <CountUp value={count} />
+                      </strong>
+                      <span>{label}</span>
+                    </button>
+                  ))}
                 </div>
                 <div className="quick-actions">
                   <button
@@ -1082,6 +1130,30 @@ export function App() {
                 </button>
               )}
             </div>
+          )}
+          {view === "Canvas" && (
+            <CanvasPage
+              refresh={refresh}
+              onTask={(t) => setEditor({ kind: "task", record: t })}
+              onDirty={setPlanningDirty}
+            />
+          )}
+          {view === "Project" && openProject && (
+            <ProjectWorkspace
+              onDirty={setPlanningDirty}
+              id={openProject}
+              refresh={refresh}
+              onBack={() => navigate("Projects")}
+              onEdit={(p) => setEditor({ kind: "project", record: p })}
+              onTask={(t) => setEditor({ kind: "task", record: t })}
+              onMemory={(m) => setEditor({ kind: "memory", record: m })}
+              onCreate={() =>
+                setEditor({ kind: "task", projectId: openProject })
+              }
+              onCreateMemory={() =>
+                setEditor({ kind: "memory", projectId: openProject })
+              }
+            />
           )}
           {["Tasks", "Projects", "Memory"].includes(view) && (
             <>
@@ -1144,12 +1216,15 @@ export function App() {
                       aria-pressed={filter === value}
                       className={filter === value ? "selected" : ""}
                       key={value}
-                      onClick={() => setFilter(value!)}
+                      onClick={() => {
+                        setFilter(value!);
+                        setOffset(0);
+                      }}
                     >
                       {label}
                     </button>
                   ))}
-                  <small>Filters apply to this page</small>
+                  <small>Filters search all your tasks</small>
                 </div>
               )}
               {loading ? (
@@ -1175,7 +1250,10 @@ export function App() {
                     <button
                       className="project-card"
                       key={p.id}
-                      onClick={() => setEditor({ kind: "project", record: p })}
+                      onClick={() => {
+                        setOpenProject(p.id);
+                        navigate("Project");
+                      }}
                     >
                       <div>
                         <span className="folder-symbol">
@@ -1324,8 +1402,7 @@ export function App() {
                   />
                 </label>
                 <p className="help">
-                  Confirm your timezone. Task due-time entry uses the device
-                  timezone shown in its form.
+                  Task deadlines use this timezone. Times are stored in UTC.
                 </p>
                 <button className="primary" type="submit">
                   Save profile
@@ -1361,6 +1438,7 @@ export function App() {
         <Editor
           state={editor}
           projects={projectOptions}
+          timezone={user.timezone || deviceZone}
           onClose={() => setEditor(null)}
           onSaved={saved}
         />
@@ -1372,13 +1450,15 @@ export function App() {
 function Editor({
   state,
   projects,
+  timezone,
   onClose,
   onSaved,
 }: {
   state: EditorState;
   projects: Project[];
+  timezone: string;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (record?: RecordItem) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     [busy, setBusy] = useState(false),
@@ -1392,7 +1472,9 @@ function Editor({
   const task = kind === "task" ? (record as Task | undefined) : undefined,
     memory = kind === "memory" ? (record as Memory | undefined) : undefined,
     project = kind === "project" ? (record as Project | undefined) : undefined;
-  const [scope, setScope] = useState(memory?.scope || "global"),
+  const [scope, setScope] = useState(
+      memory?.scope || (state.projectId ? "project" : "global"),
+    ),
     [sensitivity, setSensitivity] = useState(memory?.sensitivity || "");
   useEffect(() => {
     const element = dialog.current;
@@ -1420,49 +1502,56 @@ function Editor({
     setBusy(true);
     setError("");
     const projectId = String(form.get("project_id") || "") || null;
-    let payload: unknown;
-    if (kind === "project")
-      payload = {
-        name: form.get("name"),
-        description: form.get("description"),
-        status: form.get("status"),
-      };
-    else if (kind === "task")
-      payload = {
-        title: form.get("title"),
-        description: form.get("description"),
-        status: form.get("status"),
-        priority: form.get("priority"),
-        project_id: projectId,
-        due_at: form.get("due")
-          ? new Date(String(form.get("due"))).toISOString()
-          : null,
-        due_timezone: form.get("due") ? deviceZone : null,
-        estimated_minutes: form.get("estimate")
-          ? Number(form.get("estimate"))
-          : null,
-        archived: form.get("archived") === "on",
-      };
-    else
-      payload = {
-        content: form.get("content"),
-        kind: form.get("kind"),
-        truth_status: form.get("truth_status"),
-        scope,
-        project_id: scope === "project" ? projectId : null,
-        sensitivity,
-        consent: form.get("consent") === "on",
-        archived: form.get("archived") === "on",
-      };
     try {
-      await api(`/${endpoint[kind]}${record ? `/${record.id}` : ""}`, {
-        method: record ? "PATCH" : "POST",
-        headers: record
-          ? { "If-Match": String(record.version) }
-          : { "Idempotency-Key": key.current },
-        body: JSON.stringify(payload),
-      });
-      onSaved();
+      let payload: unknown;
+      if (kind === "project")
+        payload = {
+          name: form.get("name"),
+          description: form.get("description"),
+          status: form.get("status"),
+        };
+      else if (kind === "task")
+        payload = {
+          title: form.get("title"),
+          description: form.get("description"),
+          status: form.get("status"),
+          priority: form.get("priority"),
+          project_id: projectId,
+          due_at: form.get("due")
+            ? Temporal.PlainDateTime.from(String(form.get("due")))
+                .toZonedDateTime(timezone, { disambiguation: "reject" })
+                .toInstant()
+                .toString()
+            : null,
+          due_timezone: form.get("due") ? timezone : null,
+          deadline_reminders: form.get("deadline_reminders") === "on",
+          estimated_minutes: form.get("estimate")
+            ? Number(form.get("estimate"))
+            : null,
+          archived: form.get("archived") === "on",
+        };
+      else
+        payload = {
+          content: form.get("content"),
+          kind: form.get("kind"),
+          truth_status: form.get("truth_status"),
+          scope,
+          project_id: scope === "project" ? projectId : null,
+          sensitivity,
+          consent: form.get("consent") === "on",
+          archived: form.get("archived") === "on",
+        };
+      const result = await api<RecordItem>(
+        `/${endpoint[kind]}${record ? `/${record.id}` : ""}`,
+        {
+          method: record ? "PATCH" : "POST",
+          headers: record
+            ? { "If-Match": String(record.version) }
+            : { "Idempotency-Key": key.current },
+          body: JSON.stringify(payload),
+        },
+      );
+      onSaved(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
     } finally {
@@ -1563,16 +1652,19 @@ function Editor({
                 placeholder="What needs to happen?"
               />
             </label>
-            <label>
-              Notes
-              <textarea
-                name="description"
-                rows={3}
-                maxLength={5000}
-                defaultValue={task?.description}
-                placeholder="A little context for your future self"
-              />
-            </label>
+            <details>
+              <summary>Notes and context</summary>
+              <label>
+                Notes
+                <textarea
+                  name="description"
+                  rows={3}
+                  maxLength={5000}
+                  defaultValue={task?.description}
+                  placeholder="A little context for your future self"
+                />
+              </label>
+            </details>
             <div className="form-grid">
               <label>
                 Status
@@ -1605,16 +1697,25 @@ function Editor({
               </label>
             </div>
             <label>
-              Due time · {deviceZone}
+              Due time · {timezone}
               <input
                 type="datetime-local"
                 name="due"
-                defaultValue={localInput(task?.due_at || null)}
+                defaultValue={localInput(task?.due_at || null, timezone)}
               />
             </label>
             <p className="help">
-              Optional. This saves a deadline; reminders are not enabled yet.
+              Optional. Past reminder offsets are skipped. Quiet hours and
+              server availability can delay delivery.
             </p>
+            <label className="inline-check">
+              <input
+                type="checkbox"
+                name="deadline_reminders"
+                defaultChecked={task?.deadline_reminders !== false}
+              />
+              Remind me 24 hours and 12 hours before the deadline
+            </label>
             <label>
               Estimated minutes
               <input
@@ -1717,7 +1818,9 @@ function Editor({
             <select
               name="project_id"
               required={kind === "memory"}
-              defaultValue={task?.project_id || memory?.project_id || ""}
+              defaultValue={
+                task?.project_id || memory?.project_id || state.projectId || ""
+              }
             >
               <option value="">
                 {kind === "memory"

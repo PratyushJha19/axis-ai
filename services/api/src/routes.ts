@@ -2,6 +2,7 @@ import { Router } from "express";
 import { sql, type Kysely } from "kysely";
 import { z } from "zod";
 import { reminderRouter } from "./reminder-routes.js";
+import { canvasRouter } from "./canvas-routes.js";
 import type { Database } from "../../../packages/database/src/index.js";
 import {
   listSchema,
@@ -21,6 +22,7 @@ const versionSchema = z.coerce.number().int().positive();
 export function productRouter(db: Kysely<Database>, mode = "mock_only") {
   const router = Router();
   router.use(reminderRouter(db, mode));
+  router.use(canvasRouter(db));
   router.get("/summary", async (_req, res) => {
     const id = (res.locals.user as Profile).id;
     const result = await sql`select

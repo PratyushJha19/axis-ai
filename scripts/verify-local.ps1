@@ -1,7 +1,10 @@
-param([switch]$Browser)
+param([switch]$Browser, [string]$Spec)
 $ErrorActionPreference = 'Stop'
 $axisRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $axisRoot
+if ($Spec -and (-not $Browser -or $Spec -notmatch '^[a-z0-9-]+\.spec\.ts$' -or -not (Test-Path -LiteralPath "tests/e2e/$Spec"))) {
+  throw 'Spec requires -Browser and the name of an existing browser test.'
+}
 $axisPgBin = 'C:/Program Files/PostgreSQL/18/bin'
 $axisStarted = $false
 & "$axisPgBin/pg_ctl.exe" -D .local/pgdata status | Out-Null
@@ -24,6 +27,7 @@ try {
     # Each workflow retains the production request limit, with an independent
     # server/window instead of accumulating every synthetic user on one test IP.
     foreach ($axisSpec in (Get-ChildItem -LiteralPath tests/e2e -Filter '*.spec.ts' | Sort-Object Name)) {
+      if ($Spec -and $axisSpec.Name -ne $Spec) { continue }
       npx playwright test $axisSpec.Name
       if ($LASTEXITCODE -ne 0) { throw "Browser verification failed: $($axisSpec.Name)" }
     }

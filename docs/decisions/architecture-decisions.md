@@ -359,6 +359,32 @@ Record material choices here. Do not silently replace decisions.
   No deployment or provider configuration change is performed by implementation.
 - **Evidence:** `../telegram-commands.md` and `../telegram-commands-results.md`.
 
+### ADR-030 — Project workspaces, durable deadline offsets and Canvas MVP
+
+- **Status:** Accepted for the workspace foundation slice.
+- **Date:** 2026-10-23
+- **Decision:** Keep canonical tasks/projects/memory and their existing statuses.
+  Project cards open a workspace; editing settings is a separate action. Add
+  owner-scoped PostgreSQL canvases, nodes and edges with optimistic versions.
+  Use the MIT React Flow editor ([official documentation](https://reactflow.dev/learn))
+  for graph interaction, lazy loaded on demand. Visual edges do not authorize or
+  create task dependencies. Node conversion uses the canonical task domain and
+  one transaction; deleting a graph never deletes its tasks.
+- **Deadline policy:** New dated tasks default to 24-hour and 12-hour elapsed UTC
+  offsets, with a per-task opt-out. A database trigger maintains schedules in the
+  same transaction as every task write, including existing planning/Telegram SQL
+  paths. Only future offsets are enrolled; migration does not backfill old tasks.
+  A due/offset ledger prevents duplicate schedules after reminder retention.
+  Explicit reopening/re-enrolment can replace cancelled future offsets.
+  Both worker dispatch boundaries validate the current source task. Already-started
+  attempts retain their uncertainty; external sends cannot be recalled.
+- **Compatibility:** Schema 14; backups accept 12–14. Existing notification consent,
+  quiet hours, leases and provider adapters remain authoritative. No new worker,
+  live integration, paid service or deployment is introduced.
+- **Limits:** This is the attachment's foundation/Canvas MVP slice. Canonical
+  milestones, subtask/dependency hierarchy, expanded planning and AI graph drafts
+  are not implemented here. Canvas milestone nodes are visual notes only.
+
 ### ADR template — Title
 
 - **Status:** Proposed / Accepted / Superseded

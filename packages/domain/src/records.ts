@@ -57,6 +57,12 @@ export async function listRecords<K extends Table>(
   input: ListInput,
 ) {
   const filters = [sql`user_id=${userId}`];
+  if (table === "tasks" && input.status)
+    filters.push(sql`status=${input.status}`);
+  if (table === "tasks" && input.overdue)
+    filters.push(
+      sql`due_at < now() and status not in ('completed','cancelled')`,
+    );
   if (input.project_id && table !== "projects")
     filters.push(sql`project_id=${input.project_id}`);
   if (input.archived !== "all")
@@ -144,6 +150,8 @@ export async function saveRecord<K extends Table>(
 ) {
   const { value, fields } = normalize(table, input);
   return inTransaction(db, async (trx) => {
+    // Match the worker dispatch lock order: owner first, then task/reminder.
+    await sql`select id from users where id=${userId} for update`.execute(trx);
     let old: RowMap[K] | undefined;
     let id: string;
     if ("id" in options) {
@@ -244,6 +252,15 @@ export async function deleteRecord(
   requestId: string,
 ) {
   await db.transaction().execute(async (trx) => {
+    await sql`select id from users where id=${userId} for update`.execute(trx);
+    if (table === "tasks") {
+      // Keep delivery history, but do not make generated alerts block task deletion.
+      // The source ledger becomes a tombstone and the dispatch guard suppresses it.
+      await sql`update reminders r set task_id=null where r.user_id=${userId} and r.task_id=${id}
+        and exists(select 1 from task_deadline_alerts a where a.reminder_id=r.id and a.user_id=${userId})`.execute(
+        trx,
+      );
+    }
     const result =
       await sql`delete from ${sql.table(table)} where user_id=${userId} and id=${id} and version=${version} returning id`.execute(
         trx,

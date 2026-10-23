@@ -220,7 +220,7 @@ export async function backupScenarios(t: TestContext, connection: string) {
         try {
           await assert.rejects(createBackup(config));
         } finally {
-          await sql`update foundation_metadata set schema_version=13 where id=1`.execute(
+          await sql`update foundation_metadata set schema_version=14 where id=1`.execute(
             db,
           );
         }

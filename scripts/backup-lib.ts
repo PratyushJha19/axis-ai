@@ -29,7 +29,7 @@ const metadata = z
   .object({
     id: z.uuid(),
     created_at: z.iso.datetime(),
-    schema: z.union([z.literal(12), z.literal(13)]),
+    schema: z.union([z.literal(12), z.literal(13), z.literal(14)]),
     schema_hash: z.string().regex(/^[a-f0-9]{64}$/),
     format: z.literal("pg-custom-aes256gcm-v1"),
     counts: z.record(
@@ -305,7 +305,7 @@ export async function createBackup(c: BackupConfig, now = new Date()) {
         "select schema_version from foundation_metadata where id=1",
       )
     ).rows[0]?.schema_version;
-    if (schema !== 12 && schema !== 13)
+    if (schema !== 12 && schema !== 13 && schema !== 14)
       throw new BackupFailure("backup_schema_incompatible");
     const snapshot = (
       await client.query<{ snapshot: string }>(

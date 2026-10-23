@@ -1,5 +1,10 @@
 # Next Targets:
 
+Workspace foundation/schema 14: see [upgrade results and running instructions](docs/workspace-upgrade-results.md).
+Run `npm ci`, then `npm run dev`; run `npm run dev:worker` in another terminal for
+deadline reminders. No new environment variables are needed. Existing tasks enroll
+their 24-hour/12-hour offsets when next saved; only future offsets are created.
+
 For Telegram task/reminder commands, follow [the complete Telegram command setup](docs/telegram-commands.md).
 It includes Render variables, one-time webhook registration, linking, commands,
 confirmation and optional BotFather menus.

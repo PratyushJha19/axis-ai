@@ -15,6 +15,7 @@ import * as agentRuns from "../migrations/010-agent-runs.js";
 import * as planning from "../migrations/011-planning.js";
 import * as calendar from "../migrations/012-calendar.js";
 import * as telegramCommands from "../migrations/013-telegram-commands.js";
+import * as workspaces from "../migrations/014-workspaces.js";
 
 export function createMigrator(db: Kysely<Database>) {
   return new Migrator({
@@ -34,6 +35,7 @@ export function createMigrator(db: Kysely<Database>) {
         "011-planning": planning,
         "012-calendar": calendar,
         "013-telegram-commands": telegramCommands,
+        "014-workspaces": workspaces,
       }),
     },
   });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { Temporal } from "@js-temporal/polyfill";
 import {
+  ArrowDown,
   ArrowUpRight,
   CalendarClock,
   CalendarRange,
@@ -347,8 +348,8 @@ export function Planning({
             </span>
             <h2 id="brief-heading">Your briefing · {brief.date}</h2>
             <p className="muted">
-              Facts from saved records. Review Calendar freshness below. Week
-              started {brief.week_start}.
+              Facts from saved records. Check Calendar freshness beside your
+              inbox. Week started {brief.week_start}.
             </p>
           </div>
           <button
@@ -451,22 +452,6 @@ export function Planning({
           ))}
         </details>
       </section>
-      <Calendar
-        date={
-          kind === "weekly"
-            ? Temporal.PlainDate.from(date || brief.date)
-                .subtract({
-                  days:
-                    (Temporal.PlainDate.from(date || brief.date).dayOfWeek -
-                      (prefs?.value.first_day ?? 1) +
-                      7) %
-                    7,
-                })
-                .toString()
-            : date || brief.date
-        }
-        onError={onError}
-      />
       {recovery && (
         <section
           ref={recoveryPanel}
@@ -581,7 +566,159 @@ export function Planning({
       )}
       <div className="planning-grid">
         <div className="planning-column">
-          <section className="panel" aria-labelledby="plans-heading">
+          <section className="panel" aria-labelledby="inbox-heading">
+            <div className="section-title">
+              <div>
+                <span className="eyebrow">RANKED FOR YOU</span>
+                <h2 id="inbox-heading">Prioritised inbox</h2>
+              </div>
+              <span className="planning-selected">
+                {brief.priorities.length} active
+                <a className="text-button" href="#plan-builder">
+                  {selected.length
+                    ? `Plan ${selected.length} selected`
+                    : "Build a plan"}{" "}
+                  <ArrowDown size={13} />
+                </a>
+              </span>
+            </div>
+            <p className="planning-intro">
+              Select tasks for a plan, or leave selection empty to use up to the
+              first 100 priorities. Missing estimates stay unscheduled. Open a
+              task to change its priority or estimate.
+            </p>
+            <div className="planning-tasks">
+              {brief.priorities.slice(page * 30, page * 30 + 30).map((t) => {
+                const overdue = brief.overdue.some((o) => o.id === t.id),
+                  checked = selected.includes(t.id);
+                return (
+                  <article
+                    key={t.id}
+                    className={`planning-task ${overdue ? "is-overdue" : ""} ${checked ? "is-selected" : ""}`}
+                  >
+                    <label className="planning-check">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setSelected((old) =>
+                            e.target.checked
+                              ? [...old, t.id]
+                              : old.filter((id) => id !== t.id),
+                          )
+                        }
+                      />
+                      <span>
+                        <span className="sr-only">Select </span>
+                        {t.title}
+                      </span>
+                    </label>
+                    <div className="planning-meta">
+                      {t.priority !== "normal" && (
+                        <span className={`priority ${t.priority}`}>
+                          {t.priority}
+                        </span>
+                      )}
+                      <span className="capitalize">{label(t.status)}</span>
+                      <span className={overdue ? "is-late" : ""}>
+                        <CalendarClock size={13} /> {showTime(t.due_at)}
+                      </span>
+                      <span>
+                        <Clock3 size={13} />{" "}
+                        {t.estimated_minutes === null
+                          ? "Estimate missing"
+                          : `${t.estimated_minutes} minutes`}
+                      </span>
+                    </div>
+                    {t.reasons.length > 0 && (
+                      <div className="planning-tags">
+                        {t.reasons.map((r) => (
+                          <span key={r}>{r}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="planning-task-actions">
+                      {overdue && (
+                        <button
+                          className="text-button tone-amber"
+                          disabled={busy}
+                          onClick={() => openRecovery(t.id)}
+                        >
+                          <CalendarClock size={13} /> Review rescheduling
+                        </button>
+                      )}
+                      <button
+                        className="text-button"
+                        onClick={() => onOpen("task", t.id)}
+                      >
+                        <ExternalLink size={13} /> Open task
+                      </button>
+                      <button
+                        className="text-button muted-button"
+                        disabled={busy}
+                        onClick={() =>
+                          void perform(async () => {
+                            await api(
+                              "/intelligence/feedback",
+                              send({ task_id: t.id, kind: "not_useful" }),
+                            );
+                            setNotice(
+                              "Feedback saved. Your task and priority are unchanged.",
+                            );
+                          })
+                        }
+                      >
+                        <ThumbsDown size={13} /> Not useful
+                      </button>
+                      {t.priority !== "critical" && !overdue && (
+                        <button
+                          className="text-button muted-button"
+                          disabled={busy}
+                          onClick={() =>
+                            void perform(async () => {
+                              await api(
+                                "/intelligence/feedback",
+                                send({ task_id: t.id, kind: "dismissed" }),
+                              );
+                              await refresh();
+                            })
+                          }
+                        >
+                          <X size={13} /> Dismiss suggestion
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+              {!brief.priorities.length && (
+                <div className="approvals-empty">
+                  <Flame size={22} />
+                  <strong>No active priorities.</strong>
+                  <span>Add a task to start planning.</span>
+                </div>
+              )}
+            </div>
+            {brief.priorities.length > 30 && (
+              <div className="pagination planning-pagination">
+                <button disabled={page === 0} onClick={() => setPage(page - 1)}>
+                  Previous priorities
+                </button>
+                <span>Page {page + 1}</span>
+                <button
+                  disabled={(page + 1) * 30 >= brief.priorities.length}
+                  onClick={() => setPage(page + 1)}
+                >
+                  Next priorities
+                </button>
+              </div>
+            )}
+          </section>
+          <section
+            className="panel"
+            id="plan-builder"
+            aria-labelledby="plans-heading"
+          >
             <div className="section-title">
               <div>
                 <span className="eyebrow">PLAN BUILDER</span>
@@ -836,234 +973,24 @@ export function Planning({
               )}
             </div>
           </section>
-          <section className="panel" aria-labelledby="inbox-heading">
-            <div className="section-title">
-              <div>
-                <span className="eyebrow">RANKED FOR YOU</span>
-                <h2 id="inbox-heading">Prioritised inbox</h2>
-              </div>
-              <span className="planning-selected">
-                {brief.priorities.length} active
-              </span>
-            </div>
-            <p className="planning-intro">
-              Select tasks for a plan, or leave selection empty to use up to the
-              first 100 priorities. Missing estimates stay unscheduled. Open a
-              task to change its priority or estimate.
-            </p>
-            <div className="planning-tasks">
-              {brief.priorities.slice(page * 30, page * 30 + 30).map((t) => {
-                const overdue = brief.overdue.some((o) => o.id === t.id),
-                  checked = selected.includes(t.id);
-                return (
-                  <article
-                    key={t.id}
-                    className={`planning-task ${overdue ? "is-overdue" : ""} ${checked ? "is-selected" : ""}`}
-                  >
-                    <label className="planning-check">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) =>
-                          setSelected((old) =>
-                            e.target.checked
-                              ? [...old, t.id]
-                              : old.filter((id) => id !== t.id),
-                          )
-                        }
-                      />
-                      <span>
-                        <span className="sr-only">Select </span>
-                        {t.title}
-                      </span>
-                    </label>
-                    <div className="planning-meta">
-                      {t.priority !== "normal" && (
-                        <span className={`priority ${t.priority}`}>
-                          {t.priority}
-                        </span>
-                      )}
-                      <span className="capitalize">{label(t.status)}</span>
-                      <span className={overdue ? "is-late" : ""}>
-                        <CalendarClock size={13} /> {showTime(t.due_at)}
-                      </span>
-                      <span>
-                        <Clock3 size={13} />{" "}
-                        {t.estimated_minutes === null
-                          ? "Estimate missing"
-                          : `${t.estimated_minutes} minutes`}
-                      </span>
-                    </div>
-                    {t.reasons.length > 0 && (
-                      <div className="planning-tags">
-                        {t.reasons.map((r) => (
-                          <span key={r}>{r}</span>
-                        ))}
-                      </div>
-                    )}
-                    <div className="planning-task-actions">
-                      {overdue && (
-                        <button
-                          className="text-button tone-amber"
-                          disabled={busy}
-                          onClick={() => openRecovery(t.id)}
-                        >
-                          <CalendarClock size={13} /> Review rescheduling
-                        </button>
-                      )}
-                      <button
-                        className="text-button"
-                        onClick={() => onOpen("task", t.id)}
-                      >
-                        <ExternalLink size={13} /> Open task
-                      </button>
-                      <button
-                        className="text-button muted-button"
-                        disabled={busy}
-                        onClick={() =>
-                          void perform(async () => {
-                            await api(
-                              "/intelligence/feedback",
-                              send({ task_id: t.id, kind: "not_useful" }),
-                            );
-                            setNotice(
-                              "Feedback saved. Your task and priority are unchanged.",
-                            );
-                          })
-                        }
-                      >
-                        <ThumbsDown size={13} /> Not useful
-                      </button>
-                      {t.priority !== "critical" && !overdue && (
-                        <button
-                          className="text-button muted-button"
-                          disabled={busy}
-                          onClick={() =>
-                            void perform(async () => {
-                              await api(
-                                "/intelligence/feedback",
-                                send({ task_id: t.id, kind: "dismissed" }),
-                              );
-                              await refresh();
-                            })
-                          }
-                        >
-                          <X size={13} /> Dismiss suggestion
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-              {!brief.priorities.length && (
-                <div className="approvals-empty">
-                  <Flame size={22} />
-                  <strong>No active priorities.</strong>
-                  <span>Add a task to start planning.</span>
-                </div>
-              )}
-            </div>
-            {brief.priorities.length > 30 && (
-              <div className="pagination planning-pagination">
-                <button disabled={page === 0} onClick={() => setPage(page - 1)}>
-                  Previous priorities
-                </button>
-                <span>Page {page + 1}</span>
-                <button
-                  disabled={(page + 1) * 30 >= brief.priorities.length}
-                  onClick={() => setPage(page + 1)}
-                >
-                  Next priorities
-                </button>
-              </div>
-            )}
-          </section>
         </div>
         <aside className="planning-column planning-side">
-          <section className="panel" aria-labelledby="ai-recs-heading">
-            <div className="section-title">
-              <div>
-                <span className="eyebrow">OPTIONAL · USES AI</span>
-                <h2 id="ai-recs-heading">Planning recommendations</h2>
-              </div>
-              <span className="approval-kind tone-violet" aria-hidden="true">
-                <Lightbulb size={16} />
-              </span>
-            </div>
-            <div className="planning-body">
-              <p className="muted planning-small">
-                AI suggestions are not confirmed facts or completed actions.
-                Ranking and time checks are deterministic.
-              </p>
-              <label className="field">
-                Relevant ordinary memory search (optional)
-                <input
-                  value={memory}
-                  maxLength={100}
-                  placeholder="e.g. focus habits"
-                  onChange={(e) => setMemory(e.target.value)}
-                />
-              </label>
-              <label className="planning-consent">
-                <input
-                  type="checkbox"
-                  checked={consent}
-                  onChange={(e) => setConsent(e.target.checked)}
-                />
-                Allow sharing up to 20 task summaries and five matching ordinary
-                global memories with my configured AI provider. This uses quota.
-              </label>
-              <button
-                className="primary planning-wide"
-                disabled={!consent || busy}
-                onClick={() =>
-                  void perform(async () => {
-                    const result = await api<Briefing>(
-                      "/intelligence/refresh",
-                      send({
-                        idempotency_key: crypto.randomUUID(),
-                        consent: true,
-                        memory_query: memory,
-                      }),
-                    );
-                    setBrief(result);
-                    setNotice(
-                      result.ai_status === "completed"
-                        ? "AI suggestions refreshed. Review them before using."
-                        : `AI generation ${result.ai_status}; saved facts and plans remain available.`,
-                    );
-                  })
-                }
-              >
-                <Sparkles size={15} /> Request AI suggestions
-              </button>
-              {brief.recommendations.length > 0 && (
-                <ul className="planning-recs">
-                  {brief.recommendations.map((r) => (
-                    <li key={r.task_id}>
-                      <button
-                        className="intel-title"
-                        onClick={() => onOpen("task", r.task_id)}
-                      >
-                        {titleOf(r.task_id) ?? "Open task"}
-                      </button>
-                      <small>Suggested: {r.advice}</small>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {brief.recommendations.length > 0 && (
-                <button
-                  className="secondary planning-wide"
-                  onClick={() =>
-                    setSelected(brief.recommendations.map((r) => r.task_id))
-                  }
-                >
-                  Use suggested tasks for next draft
-                </button>
-              )}
-            </div>
-          </section>
+          <Calendar
+            date={
+              kind === "weekly"
+                ? Temporal.PlainDate.from(date || brief.date)
+                    .subtract({
+                      days:
+                        (Temporal.PlainDate.from(date || brief.date).dayOfWeek -
+                          (prefs?.value.first_day ?? 1) +
+                          7) %
+                        7,
+                    })
+                    .toString()
+                : date || brief.date
+            }
+            onError={onError}
+          />
           <section className="panel" aria-labelledby="history-heading">
             <div className="section-title">
               <div>
@@ -1126,175 +1053,261 @@ export function Planning({
               )}
             </div>
           </section>
-          {prefs && (
-            <section className="panel" aria-labelledby="prefs-heading">
-              <div className="section-title">
-                <div>
-                  <span className="eyebrow">PREFERENCES</span>
-                  <h2 id="prefs-heading">Availability and proactive alerts</h2>
-                </div>
+        </aside>
+      </div>
+      <div className="planning-extras">
+        <section className="panel" aria-labelledby="ai-recs-heading">
+          <div className="section-title">
+            <div>
+              <span className="eyebrow">OPTIONAL · USES AI</span>
+              <h2 id="ai-recs-heading">Planning recommendations</h2>
+            </div>
+            <span className="approval-kind tone-violet" aria-hidden="true">
+              <Lightbulb size={16} />
+            </span>
+          </div>
+          <div className="planning-body">
+            <p className="muted planning-small">
+              AI suggestions are not confirmed facts or completed actions.
+              Ranking and time checks are deterministic.
+            </p>
+            <label className="field">
+              Relevant ordinary memory search (optional)
+              <input
+                value={memory}
+                maxLength={100}
+                placeholder="e.g. focus habits"
+                onChange={(e) => setMemory(e.target.value)}
+              />
+            </label>
+            <label className="planning-consent">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+              />
+              Allow sharing up to 20 task summaries and five matching ordinary
+              global memories with my configured AI provider. This uses quota.
+            </label>
+            <button
+              className="primary planning-wide"
+              disabled={!consent || busy}
+              onClick={() =>
+                void perform(async () => {
+                  const result = await api<Briefing>(
+                    "/intelligence/refresh",
+                    send({
+                      idempotency_key: crypto.randomUUID(),
+                      consent: true,
+                      memory_query: memory,
+                    }),
+                  );
+                  setBrief(result);
+                  setNotice(
+                    result.ai_status === "completed"
+                      ? "AI suggestions refreshed. Review them before using."
+                      : `AI generation ${result.ai_status}; saved facts and plans remain available.`,
+                  );
+                })
+              }
+            >
+              <Sparkles size={15} /> Request AI suggestions
+            </button>
+            {brief.recommendations.length > 0 && (
+              <ul className="planning-recs">
+                {brief.recommendations.map((r) => (
+                  <li key={r.task_id}>
+                    <button
+                      className="intel-title"
+                      onClick={() => onOpen("task", r.task_id)}
+                    >
+                      {titleOf(r.task_id) ?? "Open task"}
+                    </button>
+                    <small>Suggested: {r.advice}</small>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {brief.recommendations.length > 0 && (
+              <button
+                className="secondary planning-wide"
+                onClick={() =>
+                  setSelected(brief.recommendations.map((r) => r.task_id))
+                }
+              >
+                Use suggested tasks for next draft
+              </button>
+            )}
+          </div>
+        </section>
+        {prefs && (
+          <section className="panel" aria-labelledby="prefs-heading">
+            <div className="section-title">
+              <div>
+                <span className="eyebrow">PREFERENCES</span>
+                <h2 id="prefs-heading">Availability and proactive alerts</h2>
               </div>
-              <div className="planning-body">
-                <p className="muted planning-small">
-                  Only the availability you enter is used. Focus blocks and
-                  accepted plans reserve time. Notifications also respect quiet
-                  hours and enabled channels.
-                </p>
-                <div className="planning-windows">
-                  {prefs.value.windows.map((w, i) => (
-                    <div className="planning-window" key={i}>
-                      <label className="field">
-                        Day
-                        <select
-                          value={w.day}
-                          onChange={(e) =>
-                            updateWindow(i, { day: Number(e.target.value) })
-                          }
-                        >
-                          {days.map((d, k) => (
-                            <option key={d} value={k + 1}>
-                              {d}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="field">
-                        Available from
-                        <input
-                          type="time"
-                          value={w.start}
-                          onChange={(e) =>
-                            updateWindow(i, { start: e.target.value })
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        Available until
-                        <input
-                          type="time"
-                          value={w.end}
-                          onChange={(e) =>
-                            updateWindow(i, { end: e.target.value })
-                          }
-                        />
-                      </label>
-                      <button
-                        className="icon-button"
-                        aria-label="Remove window"
-                        title="Remove window"
-                        onClick={() =>
-                          updatePrefs({
-                            windows: prefs.value.windows.filter(
-                              (_, j) => j !== i,
-                            ),
-                          })
+            </div>
+            <div className="planning-body">
+              <p className="muted planning-small">
+                Only the availability you enter is used. Focus blocks and
+                accepted plans reserve time. Notifications also respect quiet
+                hours and enabled channels.
+              </p>
+              <div className="planning-windows">
+                {prefs.value.windows.map((w, i) => (
+                  <div className="planning-window" key={i}>
+                    <label className="field">
+                      Day
+                      <select
+                        value={w.day}
+                        onChange={(e) =>
+                          updateWindow(i, { day: Number(e.target.value) })
                         }
                       >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  ))}
-                  {!prefs.value.windows.length && (
-                    <p className="plan-empty">No availability saved yet.</p>
-                  )}
-                </div>
-                <button
-                  className="add-row planning-add"
-                  onClick={() =>
-                    updatePrefs({
-                      windows: [
-                        ...prefs.value.windows,
-                        { day: 1, start: "09:00", end: "17:00" },
-                      ],
-                    })
-                  }
-                >
-                  <Plus size={15} /> Add availability window
-                </button>
-                <p className="help planning-help">
-                  New windows are editable proposals; save only the hours you
-                  are actually available.
-                </p>
-                <div className="planning-fields">
-                  <label className="field">
-                    Week starts
-                    <select
-                      value={prefs.value.first_day}
-                      onChange={(e) =>
-                        updatePrefs({ first_day: Number(e.target.value) })
+                        {days.map((d, k) => (
+                          <option key={d} value={k + 1}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      Available from
+                      <input
+                        type="time"
+                        value={w.start}
+                        onChange={(e) =>
+                          updateWindow(i, { start: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      Available until
+                      <input
+                        type="time"
+                        value={w.end}
+                        onChange={(e) =>
+                          updateWindow(i, { end: e.target.value })
+                        }
+                      />
+                    </label>
+                    <button
+                      className="icon-button"
+                      aria-label="Remove window"
+                      title="Remove window"
+                      onClick={() =>
+                        updatePrefs({
+                          windows: prefs.value.windows.filter(
+                            (_, j) => j !== i,
+                          ),
+                        })
                       }
                     >
-                      {days.map((d, i) => (
-                        <option key={d} value={i + 1}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    Buffer minutes
-                    <input
-                      type="number"
-                      min={0}
-                      max={60}
-                      value={prefs.value.buffer_minutes}
-                      onChange={(e) =>
-                        updatePrefs({ buffer_minutes: Number(e.target.value) })
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    Deadline lead time (minutes)
-                    <input
-                      type="number"
-                      min={5}
-                      max={10080}
-                      value={prefs.value.lead_minutes}
-                      onChange={(e) =>
-                        updatePrefs({ lead_minutes: Number(e.target.value) })
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    Daily briefing alert time (leave blank to disable)
-                    <input
-                      type="time"
-                      value={prefs.value.briefing_time ?? ""}
-                      onChange={(e) =>
-                        updatePrefs({ briefing_time: e.target.value || null })
-                      }
-                    />
-                  </label>
-                </div>
-                <label className="planning-toggle">
-                  <input
-                    type="checkbox"
-                    checked={prefs.value.alerts_enabled}
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+                {!prefs.value.windows.length && (
+                  <p className="plan-empty">No availability saved yet.</p>
+                )}
+              </div>
+              <button
+                className="add-row planning-add"
+                onClick={() =>
+                  updatePrefs({
+                    windows: [
+                      ...prefs.value.windows,
+                      { day: 1, start: "09:00", end: "17:00" },
+                    ],
+                  })
+                }
+              >
+                <Plus size={15} /> Add availability window
+              </button>
+              <p className="help planning-help">
+                New windows are editable proposals; save only the hours you are
+                actually available.
+              </p>
+              <div className="planning-fields">
+                <label className="field">
+                  Week starts
+                  <select
+                    value={prefs.value.first_day}
                     onChange={(e) =>
-                      updatePrefs({ alerts_enabled: e.target.checked })
+                      updatePrefs({ first_day: Number(e.target.value) })
+                    }
+                  >
+                    {days.map((d, i) => (
+                      <option key={d} value={i + 1}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  Buffer minutes
+                  <input
+                    type="number"
+                    min={0}
+                    max={60}
+                    value={prefs.value.buffer_minutes}
+                    onChange={(e) =>
+                      updatePrefs({ buffer_minutes: Number(e.target.value) })
                     }
                   />
-                  Enable optional personal planning alerts through my configured
-                  notification channels (maximum five per local day).
                 </label>
-                <button
-                  className="primary planning-wide"
-                  disabled={busy}
-                  onClick={() =>
-                    void perform(async () => {
-                      setPrefs(
-                        await api("/planning-preferences", send(prefs, "PUT")),
-                      );
-                      setNotice("Planning preferences saved.");
-                    })
-                  }
-                >
-                  <Check size={15} /> Save planning preferences
-                </button>
+                <label className="field">
+                  Deadline lead time (minutes)
+                  <input
+                    type="number"
+                    min={5}
+                    max={10080}
+                    value={prefs.value.lead_minutes}
+                    onChange={(e) =>
+                      updatePrefs({ lead_minutes: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  Daily briefing alert time (leave blank to disable)
+                  <input
+                    type="time"
+                    value={prefs.value.briefing_time ?? ""}
+                    onChange={(e) =>
+                      updatePrefs({ briefing_time: e.target.value || null })
+                    }
+                  />
+                </label>
               </div>
-            </section>
-          )}
-        </aside>
+              <label className="planning-toggle">
+                <input
+                  type="checkbox"
+                  checked={prefs.value.alerts_enabled}
+                  onChange={(e) =>
+                    updatePrefs({ alerts_enabled: e.target.checked })
+                  }
+                />
+                Enable optional personal planning alerts through my configured
+                notification channels (maximum five per local day).
+              </label>
+              <button
+                className="primary planning-wide"
+                disabled={busy}
+                onClick={() =>
+                  void perform(async () => {
+                    setPrefs(
+                      await api("/planning-preferences", send(prefs, "PUT")),
+                    );
+                    setNotice("Planning preferences saved.");
+                  })
+                }
+              >
+                <Check size={15} /> Save planning preferences
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

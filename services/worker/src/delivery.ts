@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { planningAlertAllowed } from "../../../packages/domain/src/planning-alert-policy.js";
+import { taskDeadlineAllowed } from "../../../packages/domain/src/task-deadline-policy.js";
 import { sql, type Kysely } from "kysely";
 import type { Logger } from "pino";
 import type { Database } from "../../../packages/database/src/index.js";
@@ -290,6 +291,8 @@ export class DeliveryEngine {
       }
       if (
         job.preference_revision !== settings.revision ||
+        (job.reminder_id !== null &&
+          !(await taskDeadlineAllowed(trx, job.user_id, job.reminder_id))) ||
         (job.reminder_id !== null &&
           !(await planningAlertAllowed(
             trx,

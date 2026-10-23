@@ -24,6 +24,7 @@ import { reminderRetentionScenarios } from "./reminder-retention-scenarios.js";
 import { planningScenarios } from "./planning-scenarios.js";
 import { calendarScenarios } from "./calendar-scenarios.js";
 import { backupScenarios } from "./backup-scenarios.js";
+import { workspaceScenarios } from "./workspace-scenarios.js";
 
 test("empty PostgreSQL migrates, repeats safely, and persists across connection restart", async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
@@ -94,7 +95,7 @@ test("empty PostgreSQL migrates, repeats safely, and persists across connection 
     );
     const first = await createMigrator(db).migrateToLatest();
     assert.equal(first.error, undefined);
-    assert.equal(first.results?.length, 5);
+    assert.equal(first.results?.length, 6);
     const migrated = (
       await sql<{
         status: string;
@@ -164,6 +165,7 @@ test("empty PostgreSQL migrates, repeats safely, and persists across connection 
     await planningScenarios(t, db, connectionString);
     await calendarScenarios(t, db);
     await backupScenarios(t, connectionString);
+    await workspaceScenarios(t, db);
   } finally {
     await db.destroy();
   }

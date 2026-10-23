@@ -145,7 +145,10 @@ export function createApp(dependencies: {
           );
         }
       },
-      express.json({ limit: "32kb" }),
+      (req, res, next) =>
+        express.json({
+          limit: req.path.startsWith("/canvases") ? "256kb" : "32kb",
+        })(req, res, next),
       calendarRouter(
         dependencies.calendar ?? new CalendarService(dependencies.db),
         dependencies.origin ?? "http://localhost:3000",

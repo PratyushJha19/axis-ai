@@ -1,5 +1,10 @@
 # AXIS — Documentation Pack
 
+**Workspace upgrade:** Projects open their tasks, notes and canvases. Dated tasks
+support 24-hour and 12-hour reminder offsets through the existing worker. See
+[workspace upgrade results](docs/workspace-upgrade-results.md) for schema 14,
+running instructions and remaining scope.
+
 **Telegram commands:** [Setup and usage](docs/telegram-commands.md) covers the
 optional linked-account command worker, webhook setup, task/reminder previews and
 confirmation. Permanent deletion stays in the dashboard. See the verification
